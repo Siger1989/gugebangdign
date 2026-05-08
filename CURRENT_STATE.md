@@ -1,5 +1,837 @@
 # CURRENT_STATE
 
+## Handoff Documentation And GitHub Publish - 2026-05-09
+
+Current objective:
+- Write a clear project handoff document for the current motion-generation pipeline state, then publish the latest local project contents to GitHub.
+
+Current progress:
+- Rewrote `HANDOFF.md` from the outdated early editor description to the current workflow:
+  - Command API architecture
+  - MotionState scope
+  - Humanoid_v1 naming
+  - source GLB skeleton mapping
+  - IK and joint dragging controls
+  - 1-24 timeline frame editing
+  - Walk_8F key poses
+  - validation commands
+  - known limitations and next steps
+- Fetched `origin/main`; local `main` is aligned with remote before commit.
+
+Files changed:
+- `HANDOFF.md`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status -sb`
+- `git remote -v`
+- `git branch --show-current`
+- `git fetch origin`
+- `npm run check`
+- `npm run validate:import`
+
+Validation result: PASS
+
+Validation details:
+- `npm run check`: PASS
+- `npm run validate:import`: PASS
+- Latest generated validation screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260508_170706Z.png`
+
+Current blocking issue:
+- None.
+
+Next step:
+- Stage the intended project changes, commit, and push to `origin/main`.
+
+## Limb IK, Joint Drag Controls, Frame Smoothing - 2026-05-09
+
+Current objective:
+- Fix the IK/controller interaction so IK controls affect whole limbs instead of only one joint, restore direct humanoid joint-point controls, and make the bottom timeline support saving any adjusted frame plus smoothing a selected frame span.
+
+Current progress:
+- Added Command API commands:
+  - `set_joint_position`
+  - `smooth_keyframes_between`
+- `set_ik_target` now solves two-bone limb chains:
+  - hand IK moves upper arm -> forearm -> hand chain
+  - foot IK moves upper leg -> lower leg -> foot chain and keeps toe offset
+  - pole targets re-solve elbow/knee bend direction
+  - pelvis control translates the whole skeleton and IK set
+- Added humanoid joint controls in the viewport:
+  - small joint boxes
+  - socket detail
+  - angle arrow shaft/head
+  - invisible hit sphere for practical picking
+- Added viewport joint dragging:
+  - left-drag a humanoid joint point to preview movement
+  - on release, the app restores the drag-start snapshot and executes `set_joint_position`
+  - child branch follows the dragged joint while preserving parent-bone length
+- IK picking now has a small screen-distance fallback so visible IK controls are easier to grab without making the handles visually huge.
+- Bottom timeline now distinguishes:
+  - 8 Walk_8F template poses
+  - 24 timeline frames
+  - saved keyframes across frames 1-24
+- Added bottom timeline controls:
+  - save current frame
+  - smooth current/selected segment
+  - 24 small frame ticks
+- Clicking saved keyframe ticks records the last two selected keyframes. `smooth_keyframes_between` uses those first; otherwise it uses the current frame's neighboring keyframe span.
+- Keyframe list now shows real timeline frame numbers and interpolation mode.
+- Debug API now exposes:
+  - `getJointScreenPositions()`
+  - existing IK screen positions for viewport validation
+
+Files changed:
+- `index.html`
+- `styles.css`
+- `app.js`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `npm run check`
+- `npm run validate:import`
+- Playwright command-level IK/joint/timeline validation on test dummy
+- Playwright viewport drag validation:
+  - drag `R_Hand_IK`
+  - drag `R_Forearm` humanoid joint with IK display toggled off
+- Playwright GLB validation with `C:\Users\sigeryang\Downloads\female+figure+3d+model.glb`
+
+Validation result: PASS
+
+Validation details:
+- `npm run check`: PASS
+- `npm run validate:import`: PASS
+- Command-level validation:
+  - `set_ik_target` moved `R_Forearm` and `R_Hand`, while keeping `R_UpperArm` stable
+  - `set_joint_position` moved `R_Forearm` and carried child `R_Hand`
+  - saving frame 5 created an additional manual keyframe
+  - smoothing frame 4 -> 5 set both keyframes to smooth interpolation
+  - timeline rendered 24 frame ticks
+- Viewport drag validation:
+  - IK drag logged `set_ik_target` success
+  - humanoid joint drag logged `set_joint_position` success
+- Female GLB validation:
+  - source bones: 41
+  - GLB skins: 1
+  - GLB joints: 41
+  - humanoid mapping: 19 / 19
+  - IK controls: 9 / 9
+  - Walk_8F keyframes: 8
+- Screenshots:
+  - `artifacts/screenshots/ik_joint_timeline_validation_20260508_165341Z.png`
+  - `artifacts/screenshots/play_visible_20260508_165906Z.png`
+  - `artifacts/screenshots/female_import_ik_timeline_20260508_170018Z.png`
+  - `artifacts/screenshots/pipeline_acceptance_20260508_170319Z.png`
+
+Current blocking issue:
+- None.
+
+Next step:
+- Manual refresh `http://localhost:8780/index.html`.
+- Test with the target GLB:
+  import GLB -> visual/mapped skeleton -> create IK -> drag hand/foot IK -> save frame -> select two saved frame ticks -> smooth segment -> play.
+
+## Viewport Controls, Transparency, Timeline - 2026-05-09
+
+Current objective:
+- Make the current IK/motion step manually controllable and reduce visual obstruction from skeleton and IK controls. Keep the bottom timeline visible in one laptop-sized viewport.
+
+Current progress:
+- Added always-visible viewport opacity controls:
+  - model opacity
+  - skeleton opacity
+  - IK/control opacity
+- Added Command API commands:
+  - `set_skeleton_opacity`
+  - `set_control_opacity`
+- Existing model opacity now has a second viewport slider wired through `set_model_opacity`.
+- Reduced generated Humanoid skeleton visual weight:
+  - thinner bone cylinders
+  - smaller joint boxes
+  - transparent basic materials
+- Reduced imported source skeleton overlay visual weight:
+  - thinner source bone cylinders
+  - smaller source joint boxes
+  - mapped labels only show when skeleton labels are enabled
+  - labels are smaller and more transparent
+- Reduced IK controller visual weight:
+  - smaller pelvis ring, foot pads, hand cubes, pole triangles
+  - separate control opacity controls both fill and wire opacity
+  - invisible hit area keeps controls easy to pick even when visually small
+- Added viewport IK dragging:
+  - left-drag an IK controller to preview movement
+  - on mouse release, the app restores the start snapshot and executes `set_ik_target`
+  - command log records the final `set_ik_target` without flooding during drag
+  - overlapping controls now pick the closest projected control to the cursor
+- Added bottom timeline transport:
+  - Play
+  - Stop
+  - current-frame scrubber
+- Timeline panel is now fixed to the bottom of the main work area and stays visible at 1366x768.
+- Fixed model disappearing after repeated renders by not disposing shared GLB geometry when clearing `modelGroup`.
+
+Files changed:
+- `index.html`
+- `styles.css`
+- `app.js`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `npm run check`
+- `npm run validate:import`
+- Playwright visual validation with `C:\Users\sigeryang\Downloads\female+figure+3d+model.glb`
+- Playwright IK drag validation using projected `Pelvis_CTRL` screen position
+
+Validation result: PASS
+
+Validation details:
+- Existing pipeline validation: PASS
+- Timeline visible in 1366x768 viewport:
+  - top: 650
+  - bottom: 768
+  - height: 118
+- Viewport opacity panel visible.
+- Opacity command state:
+  - model opacity: `0.78`
+  - skeleton opacity: `0.18`
+  - control opacity: `0.22`
+- Command log records:
+  - `set_model_opacity`
+  - `set_skeleton_opacity`
+  - `set_control_opacity`
+  - `set_ik_target`
+- IK drag test:
+  - target: `Pelvis_CTRL`
+  - final command: `set_ik_target` success
+- Screenshot:
+  - `artifacts/screenshots/compact_controls_timeline_20260508_162122Z.png`
+
+Current blocking issue:
+- None.
+
+Next step:
+- Manual refresh `http://localhost:8780/index.html` and test left-dragging IK controls with the user's target GLB.
+
+## Source Bone Driven Walk Direction - 2026-05-08
+
+Current objective:
+- Make Walk_8F drive the imported model's own source bones using the rig's actual T-Pose directions, instead of applying fixed global XYZ offsets to a generated overlay skeleton.
+
+Current progress:
+- Added runtime maps from imported source bone ids to their live `THREE.Bone` objects.
+- Cached source-bone Rest local transforms and Rest world transforms during GLB import.
+- Added rig-basis inference from mapped T-Pose joints:
+  - right axis from mapped right/left side pairs.
+  - up axis from Hips to Head / Chest.
+  - forward axis from Foot to Toe direction, with fallback from right/up.
+- Changed Walk_8F generation so foot stride, lift, pole targets, and arm swing are projected through the inferred rig basis.
+- Changed the T-Pose walk start so arms are lowered from the imported model's T-Pose before walking.
+- Added source-rig driving from Humanoid key pose joints back onto the imported source bones.
+- Source skeleton overlay now reads live source-bone world positions, so it follows the driven rig.
+- Added `window.__motionDebug.getSourceRigDebug()` for checking mapped source-bone rest/current transforms.
+- Updated validation so side identity and pole target direction use the inferred rig basis instead of fixed global X/Z.
+- Adjusted auto-mapping to prefer non-`Twist` main bones, while still allowing a `Twist` fallback when a model has no clean main joint.
+
+Files changed:
+- `app.js`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `npm run check`
+- `npm run validate:import`
+- Playwright source-rig direction check with `C:\Users\sigeryang\Downloads\female+figure+3d+model.glb`
+- Playwright screenshot capture to `artifacts/screenshots/source_rig_walk_drives_model_20260508_160341Z.png`
+- Playwright validation check:
+  import GLB -> create SourceRig_v1 -> create IK controls -> apply Walk_8F -> validate motion
+
+Validation result: PASS
+
+Validation details:
+- Female GLB source bones: 41
+- GLB joints: 41
+- Humanoid mapping: 19 / 19
+- Runtime source bones cached: 41
+- Rest transform cache: 41
+- Final skeleton after IK: `Humanoid_v1`
+- IK controls: 9 / 9
+- Keyframes: 8 / 8
+- Source rig max quaternion delta after Walk_8F: `0.7964`
+- Right hand dropped along inferred up axis: `-0.2428`
+- Left hand dropped along inferred up axis: `-0.2378`
+- Validation report after source-rig walk: `Passed`
+
+Current blocking issue:
+- Browser plugin connection timed out during in-app-browser reload; Playwright validation against the same localhost app passed.
+
+Next step:
+- Manual browser refresh at `http://localhost:8780/index.html`.
+- Re-test with the user's target GLB: import -> visual source skeleton -> confirm/adjust mapping -> create IK -> apply Walk_8F -> play.
+
+## Bound Source Overlay And IK Conversion Fix - 2026-05-08
+
+Current objective:
+- Fix user feedback that mapped/imported source bones should not become large viewport boxes, and that Create IK Controls failed after creating `SourceRig_v1`.
+
+Current progress:
+- Reduced source joint handle size substantially.
+- Reduced source bone segment thickness.
+- Mapped source bones now show a small nearby Humanoid binding label instead of a large box.
+- Selected source joint still highlights, but no longer dominates the character.
+- `create_ik_controls` and `apply_motion_template` now call `ensureHumanoidSkeletonForAnimation()`.
+- If the current skeleton is `SourceRig_v1` and the Humanoid mapping is complete (`19 / 19`), the app automatically rebuilds `Humanoid_v1` from mapped source bone T-Pose coordinates before creating IK controls.
+- If mapping is incomplete, the command still blocks with a clear message.
+
+Files changed:
+- `app.js`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `npm run check`
+- Playwright check using `C:\Users\sigeryang\Downloads\female+figure+3d+model.glb`:
+  import GLB -> create `SourceRig_v1` -> click Create IK Controls -> auto-convert to `Humanoid_v1` -> create 9 IK controls.
+- `npm run validate:import`
+
+Validation result: PASS
+
+Validation details:
+- Source bones: 41
+- GLB joints: 41
+- Humanoid mapping: 19 / 19
+- Final skeleton after Create IK Controls: `Humanoid_v1`
+- IK controls: 9 / 9
+- Command log last entry: `create_ik_controls` success
+
+Current blocking issue:
+- None.
+
+Next step:
+- Add viewport drag mapping so users can drag standard joint names directly onto visible source joints in the viewport.
+
+## Source Skeleton Viewport Overlay - 2026-05-08
+
+Current objective:
+- Restore the early-version skeleton display style for imported models with readable bones, so source bone structure is visible inside the mesh during the mapping stage.
+
+Current progress:
+- Added `sourceSkeletonGroup` rendered between the model and generated skeleton/IK overlays.
+- When a GLB exposes source bones, the viewport now immediately draws the imported source skeleton before creating Humanoid_v1.
+- Source skeleton uses the early-style colored bone segments and box joint handles:
+  - Right side: warm color
+  - Left side: cool color
+  - Center: green
+- Source bone overlay uses `depthTest: false`, so bones remain visible even when they are inside the character mesh.
+- Increased source bone visual scale for readability.
+- Added source bone picking:
+  - left-click a source joint handle in the viewport to run `select_source_bone`
+  - the selected source joint is highlighted yellow/white
+  - the corresponding source bone row in the right panel is highlighted
+  - the bone inspector shows source bone name, parent, length, side, and color rule before Humanoid_v1 is generated
+
+Files changed:
+- `app.js`
+- `styles.css`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `npm run check`
+- Playwright import/overlay/pick check using `C:\Users\sigeryang\Downloads\female+figure+3d+model.glb`
+- `npm run validate:import`
+
+Validation result: PASS
+
+Validation details:
+- Source bones: 41
+- GLB joints: 41
+- Auto humanoid mapping: 19 / 19
+- Source bone selection: selected `Root`, highlighted one source row, and updated bone inspector.
+
+Current blocking issue:
+- None.
+
+Next step:
+- Add direct drag/drop from viewport source joints to standard humanoid slots, so the user can map without relying only on the right-side list.
+
+## Viewport Orbit Direction And Distance Lock - 2026-05-08
+
+Current objective:
+- Fix viewport navigation after user reported the mouse orbit direction felt reversed and orbit dragging changed zoom distance.
+
+Current progress:
+- Reversed orbit drag direction for both horizontal and vertical middle-mouse orbit.
+- Added `navigationStartDistance` so orbit and pan lock camera distance for the full drag gesture.
+- Wheel events are ignored while orbiting or panning, preventing accidental zoom during middle-mouse drag.
+- Only mouse wheel or Ctrl + middle mouse drag changes camera distance.
+
+Files changed:
+- `app.js`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `npm run check`
+- Playwright camera interaction check:
+  - right/down middle drag changes yaw/pitch in the corrected direction
+  - orbit distance stays unchanged
+  - pan distance stays unchanged
+  - Ctrl + middle drag changes distance
+  - mouse wheel changes distance
+- `npm run validate:import`
+
+Validation result: PASS
+
+Current blocking issue:
+- None.
+
+Next step:
+- Hard refresh `http://localhost:8780/index.html` and test middle-mouse orbit manually.
+
+## Static GLB Skeleton Diagnosis - 2026-05-08
+
+Current objective:
+- Explain and fix the case where the user's downloaded `police+officer+3d+model.glb` displays a character mesh but imports with zero readable bones.
+
+Current progress:
+- Parsed the actual GLB file at `C:\Users\sigeryang\Downloads\police+officer+3d+model.glb`.
+- Confirmed the GLB JSON has:
+  - generator: `Tripo`
+  - nodes: 1
+  - meshes: 1
+  - skins: 0
+  - joints: 0
+  - animations: 0
+- Added browser-side GLB diagnostics during import so the UI/debug summary exposes `skins`, `joints`, `nodes`, generator, and extracted source bone count.
+- When a GLB has no `skins / joints`, the skeleton panel now states that no glTF skeleton was found instead of implying a silent failure.
+- Changed `视觉辅助适配骨架` so it no longer fails on static mesh GLBs. If source bones are zero, it estimates a `Humanoid_v1` from the imported model's bounds and human proportions, sets model opacity to 50%, and moves to the IK stage.
+- Verified the police model path:
+  - source bones after import: 0
+  - GLB skins: 0
+  - GLB joints: 0
+  - estimated Humanoid_v1 joints: 19
+  - estimated Humanoid_v1 bones: 18
+  - IK controls after estimate: 9
+
+Files changed:
+- `app.js`
+- `README.md`
+- `CURRENT_STATE.md`
+
+Commands run:
+- Direct Node GLB JSON parser for `C:\Users\sigeryang\Downloads\police+officer+3d+model.glb`
+- `npm run check`
+- Playwright import + visual estimate + IK check for the police model
+- `npm run validate:import`
+
+Validation result: PASS
+
+Current blocking issue:
+- The police GLB itself does not contain a standards-readable glTF skeleton. Any bones for this file must be estimated from mesh shape, or created by a separate rigging/auto-rigging step.
+
+Next step:
+- Improve mesh-based estimation beyond simple bounds: silhouette/landmark analysis for head, shoulders, elbows, wrists, hips, knees, ankles, and feet.
+
+## SourceRig Visual Overlay Mode - 2026-05-08
+
+Current objective:
+- Add the user's requested second skeleton path: keep the imported model's original bone count and generate an adapted skeleton from the T-Pose source bones instead of forcing the default 19-joint Humanoid_v1.
+
+Current progress:
+- Added `create_source_skeleton_from_import` command.
+- Skeleton stage now exposes two paths:
+  - `默认 / 映射 Humanoid_v1` for IK, Walk_8F, validation, and export.
+  - `视觉辅助适配骨架` for preserving imported source bone count and hierarchy.
+- Importing a GLB now extracts source bones, parent ids, source world positions, side guesses, and an auto-suggested humanoid mapping.
+- `视觉辅助适配骨架` sets model opacity to 50%, overlays source skeleton points, and creates `SourceRig_v1` using the imported T-Pose bone count and parent-child hierarchy.
+- `SourceRig_v1` is intentionally blocked from IK / Walk_8F commands until mapped back to Humanoid_v1, so default animation flow remains stable.
+- Updated debug summaries and export JSON to include source bones, humanoid mapping, and visual analysis metadata.
+- Updated README with the two skeleton generation paths.
+
+Files changed:
+- `index.html`
+- `styles.css`
+- `app.js`
+- `README.md`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `npm run check`
+- `npm run validate:import`
+- Playwright GLB import + `create_source_skeleton_from_import` check using `sample_models/stylized_3d_character_model.glb`
+
+Validation result: PASS
+
+Validation details:
+- Sample GLB source bones: 39
+- Generated `SourceRig_v1` joints: 39
+- Generated `SourceRig_v1` bones: 38
+- Model opacity after visual overlay generation: 0.5
+- Visual screenshot: `artifacts/screenshots/source_rig_visual_overlay_20260508_145534Z.png`
+
+Current blocking issue:
+- This is local geometry/overlay inference, not an external AI image-recognition model yet. It deliberately uses GLB source bones as the authoritative data and visual overlay as an assistive view.
+
+Next step:
+- Improve source-to-Humanoid mapping suggestions and allow clicking/dragging bones directly in the viewport.
+
+## Blender-Style Viewport Navigation - 2026-05-08
+
+Current objective:
+- Make viewport camera controls follow Blender conventions instead of left-drag view rotation.
+
+Current progress:
+- Changed orbit to middle mouse drag.
+- Changed pan to Shift + middle mouse drag.
+- Changed zoom to Ctrl + middle mouse drag or mouse wheel.
+- Kept Alt + left mouse drag as a fallback for trackpads or mice without a middle button.
+- Left mouse is now free for future bone/control selection and direct manipulation.
+- Updated viewport help text.
+
+Files changed:
+- `index.html`
+- `styles.css`
+- `app.js`
+- `README.md`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `npm run check`
+- Playwright camera interaction check:
+  middle orbit, Shift+middle pan, Ctrl+middle zoom, wheel zoom, Alt+left orbit.
+
+Validation result: PASS
+
+Current blocking issue:
+- None.
+
+Next step:
+- Add viewport picking for bones and controls now that left click is available.
+
+## IK Control Visual Cleanup - 2026-05-08
+
+Current objective:
+- Restore the IK controller visual style so controllers read as 3D handles instead of large blocking text labels.
+
+Current progress:
+- Disabled skeleton/control labels by default.
+- Changed IK controls back to compact 3D visual handles:
+  - `Pelvis_CTRL`: double green wire ring.
+  - Foot IK: warm/cool foot pad with wire outline.
+  - Hand IK: small warm/cool wire cube.
+  - Pole targets: warm/cool triangular target.
+- IK control labels now only appear when the `骨架标签` toggle is enabled.
+- Shrunk label canvases, font size, world scale, and made labels depth-tested so they no longer draw permanently over the model.
+- Captured visual validation screenshot:
+  `artifacts/screenshots/pipeline_acceptance_20260508_143346Z.png`
+
+Files changed:
+- `index.html`
+- `app.js`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `npm run check`
+- `node --check scripts\validate_demo_import.mjs`
+- `Invoke-WebRequest -UseBasicParsing http://localhost:8780/index.html`
+- Playwright IK visual screenshot to `artifacts/screenshots/ik_controls_compact_20260508_143319Z.png`
+- `npm run validate:import`
+
+Validation result: PASS
+
+Current blocking issue:
+- None.
+
+Next step:
+- Hard refresh `http://localhost:8780/index.html` so the browser picks up the smaller labels and restored controller handles.
+
+## File Protocol Load Fix - 2026-05-08
+
+Current objective:
+- Fix the user-visible loading failure caused by opening `index.html` through `file://` instead of the local HTTP server.
+
+Current progress:
+- Confirmed `http://localhost:8780/index.html` returns HTTP 200.
+- Added a `file://` guard in `index.html`; when the local server is reachable, the page shows a Chinese notice and redirects to `http://localhost:8780/index.html`.
+- If the local server is not reachable, the notice explains that `start_demo.bat` must be run first.
+- Updated `start_demo.bat` so it starts the server and opens the correct localhost URL automatically.
+- Updated `README.md` with the safer startup behavior.
+
+Files changed:
+- `index.html`
+- `styles.css`
+- `start_demo.bat`
+- `README.md`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `Invoke-WebRequest -UseBasicParsing http://localhost:8780/index.html`
+- `npm run check`
+- `node --check scripts\validate_demo_import.mjs`
+- Playwright file-url redirect check from `file:///D:/codex%E9%AA%A8%E9%AA%BC%E7%BB%91%E5%AE%9A/index.html` to `http://localhost:8780/index.html`
+- `npm run validate:import`
+
+Validation result: PASS
+
+Current blocking issue:
+- None.
+
+Next step:
+- In the browser, refresh the current `file://` tab once, or directly open `http://localhost:8780/index.html`.
+- For future runs, use `start_demo.bat` or `npm start` plus the localhost URL.
+
+## Tutorial Video - 2026-05-08
+
+Current objective:
+- Create a short animated tutorial showing how to use the phase-one action generation pipeline.
+
+Current progress:
+- Added `scripts/create_tutorial_video.mjs`.
+- Added `npm run tutorial:video`.
+- The script opens `http://localhost:8780/index.html`, overlays Chinese captions and a visible cursor, then records:
+  load test dummy -> create skeleton -> create IK controls -> apply walk template -> play -> validate -> export -> undo -> redo.
+- Generated WebM tutorial video:
+  `artifacts/videos/action_pipeline_tutorial_20260508_140439Z.webm`
+- Converted the WebM to MP4 for easier playback:
+  `artifacts/videos/action_pipeline_tutorial_20260508_140439Z.mp4`
+- Updated README with the tutorial video command.
+
+Files changed:
+- `package.json`
+- `scripts/create_tutorial_video.mjs`
+- `README.md`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check scripts\create_tutorial_video.mjs`
+- `Invoke-WebRequest -UseBasicParsing http://localhost:8780/index.html`
+- `npm run check`
+- `npm run tutorial:video`
+- `ffmpeg -y -i artifacts\videos\action_pipeline_tutorial_20260508_140439Z.webm -c:v libx264 -pix_fmt yuv420p -movflags +faststart artifacts\videos\action_pipeline_tutorial_20260508_140439Z.mp4`
+
+Validation result: PASS
+
+Current blocking issue:
+- None.
+
+Next step:
+- Watch `artifacts/videos/action_pipeline_tutorial_20260508_140439Z.mp4`.
+- Re-run `npm run tutorial:video` whenever the UI changes and a fresh demo short is needed.
+
+## Chinese UI Pass - 2026-05-08
+
+Current objective:
+- Translate the user-facing pipeline UI from English to Chinese while preserving required internal Command API names and exported JSON field names.
+
+Current progress:
+- Translated flow steps, status strip, viewport toggles, timeline labels, inspector panels, buttons, validation labels, undo/redo labels, and debug panel headings.
+- Translated runtime status values such as loaded/missing/passed/issues/unsaved.
+- Translated viewport skeleton and IK control display labels while keeping internal Humanoid_v1 joint/control IDs unchanged.
+- Translated command log display names in the debug panel; internal command names still remain available through `executeCommand`.
+- Updated README workflow labels to Chinese.
+
+Files changed:
+- `index.html`
+- `app.js`
+- `README.md`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short --branch`
+- `git diff --stat`
+- `rg -n ... index.html app.js README.md scripts/validate_demo_import.mjs`
+- `npm run check`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run validate:import`
+- Screenshot capture to `artifacts/screenshots/pipeline_acceptance_20260508_135949Z.png`.
+- Screenshot capture to `artifacts/screenshots/pipeline_acceptance_20260508_140132Z.png`.
+
+Validation result: PASS
+
+Current blocking issue:
+- None.
+
+Next step:
+- Hard refresh `http://localhost:8780/index.html`.
+- Note: raw JSON keys and internal command IDs intentionally remain English because they are part of the required data/API contract.
+
+## Pipeline Command Architecture Refactor - 2026-05-08
+
+Current objective:
+- Refactor the app away from a broad 3D editor surface into a phase-one action generation pipeline:
+  Load Test Dummy -> Create Humanoid Skeleton -> Create IK Controls -> Apply Walk_8F Template -> Play -> Validate Motion -> Export Motion JSON -> Undo / Redo.
+
+Current progress:
+- Replaced the old editor-style `index.html` with a six-stage pipeline UI:
+  Model, Skeleton, IK Controls, Motion Template, Validate / Fix, Export.
+- Replaced the compact-editor CSS with pipeline-specific layout, status strip, timeline, inspector, viewport toggles, and Command API Debug panel.
+- Replaced `app.js` with a command-driven MotionState implementation:
+  - all primary UI actions call `executeCommand(createCommand(...))`.
+  - implemented `command_log`, `undo_stack`, `redo_stack`, `validation_report`, and MotionState summary.
+  - implemented Humanoid_v1 fixed naming, 9 IK controls, Walk_8F key poses, playback, validation, export/import JSON, undo, redo.
+- Routed stage buttons, timeline frame buttons, and view toggles through Command API commands instead of direct state mutation.
+- Added automatic stage progression for the first-phase pipeline:
+  Load -> Skeleton -> IK -> Motion -> Validate -> Export.
+- Replaced the old GLB/editor regression script with a pipeline acceptance script.
+- Updated `README.md` to describe the new first-phase pipeline instead of the old editor feature list.
+
+Files changed:
+- `README.md`
+- `index.html`
+- `styles.css`
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short --branch`
+- `git diff --stat`
+- `Get-Content -Encoding utf8 README.md`
+- `Get-Content -Encoding utf8 CURRENT_STATE.md`
+- `npm run check`
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run validate:import`
+- Screenshot capture to `artifacts/screenshots/pipeline_acceptance_20260508_135122Z.png`.
+
+Validation result: PASS
+
+Current blocking issue:
+- None.
+
+Next step:
+- Hard refresh `http://localhost:8780/index.html`.
+- Use the pipeline in order; check Command API Debug to confirm every action is logged.
+- Next engineering layer should improve command boundaries and tests, not add new features.
+
+## Compact Laptop UI - 2026-05-08
+
+Current objective:
+- Shrink the overall UI so the app is usable on a small laptop screen and the main model view, right controls, and timeline can fit in one browser viewport.
+
+Current progress:
+- Removed the remaining forced small-screen minimum layout width.
+- Added responsive global UI scaling for shorter screens.
+- Compressed top controls, HUD cards, timeline rows, keyframe records, and frame ticks.
+- Compressed right-side tool cards, inputs, toggles, mapping rows, and status blocks.
+- Made the humanoid mapping list internally scrollable so the right panel no longer grows uncontrollably.
+- Added collapsible right-panel tool cards; low-frequency modules default collapsed on laptop screens, and mode switching expands the matching tool card when needed.
+- Tuned the 1366x768 compact layout so the main shell, timeline, right panel, and every right-panel module header fit in the first viewport.
+- Preserved existing humanoid mapping, quick Pose, weight, walk-template, and timeline controls.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `styles.css`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short --branch`
+- `git diff --stat`
+- `Get-Content -Encoding utf8 README.md`
+- `Get-Content -Encoding utf8 CURRENT_STATE.md`
+- `Get-Content -Encoding utf8 styles.css`
+- `npm run check`
+- `node --check scripts\validate_demo_import.mjs`
+- Screenshot capture to `artifacts/screenshots/compact_ui_20260508_125648Z.png`.
+- Screenshot capture to `artifacts/screenshots/compact_ui_collapsed_20260508_130021Z.png`.
+- Screenshot capture to `artifacts/screenshots/compact_ui_final_20260508_130123Z.png`.
+- `npm run validate:import`
+
+Validation result: PASS
+
+Current blocking issue:
+- None.
+
+Next step:
+- Hard refresh `http://localhost:8780/index.html` and use the small arrow on each right-panel card title to expand low-frequency tools when needed.
+
+## Humanoid Mapping, Quick Pose, Timeline Editing - 2026-05-08
+
+Current objective:
+- Add the first stable layer of human rig mapping, Cascadeur-style quick pose helpers, and timeline editing while preserving existing GLB import, pose, weight, and walk-template behavior.
+
+Current progress:
+- Added a right-panel `人形映射` section:
+  - auto maps Hip / Spine / Chest / Neck / Head and left/right arm, forearm, hand, thigh, calf, foot roles.
+  - allows manual role correction with joint dropdowns.
+  - confirms mapping and stores character forward/right/up axis overrides.
+  - mapping is now used by character basis, mirror direction, walk direction, support checks, and role lookup.
+- Fixed side-name detection so names like `lower_arm.R` and `lower_leg.R` no longer get mistaken for left-side bones because they start with `lower`.
+- Added a `neck` segment to the built-in human template, so the template can map all 17 human roles.
+- Added a right-panel `快速 Pose` section:
+  - left/right hand and foot IK target buttons select the mapped endpoint and switch to Pose translate control.
+  - left/right foot lock toggles keep the foot target fixed through IK during pose/playback updates.
+  - copy/paste pose snapshots.
+  - mirror pose by swapping mapped left/right limb local transforms.
+  - reset mapped limb/body roles to rest/base pose.
+  - support-foot and balance status text.
+  - previous/next keyframe ghost line preview.
+- Upgraded the timeline:
+  - delete current keyframe.
+  - copy keyframe.
+  - paste copied keyframe to current frame.
+  - move keyframe backward/forward.
+  - per-keyframe interpolation: linear / smooth / hold.
+  - playback speed slider.
+  - import current model animation Clip into editable timeline keyframes when the loaded GLB contains animations.
+- Made `scripts/validate_demo_import.mjs` portable:
+  - it now falls back to `sample_models/stylized_3d_character_model.glb` if the old `C:\Users\bodean\Downloads\...` path does not exist.
+  - added regression checks for humanoid mapping, quick Pose helpers, and timeline editing.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `npm run check`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run validate:import`
+- Headless Edge smoke test for humanoid mapping / IK / timeline edit debug APIs.
+- Screenshot capture to `artifacts/screenshots/humanoid_pose_timeline_20260508_2035.png`.
+
+Validation result: PASS
+
+Current blocking issue:
+- None for this implementation pass.
+- Note: the bundled stylized test GLB exposes no separate Neck joint, so imported-model auto mapping reports 16/17 roles. The built-in template maps 17/17 after the new neck segment. The user can manually map Neck if a model exposes it.
+
+Next step:
+- Manually open `http://localhost:8780/index.html`, hard refresh, load the test model, and inspect the new `人形映射`, `快速 Pose`, and timeline edit controls.
+- Next useful feature layer is real GLB animation export from the edited keyframes.
+
+## Local Run Fix - 2026-05-08
+
+Current objective:
+- Restore local usability after the app was opened directly through `file:///D:/codex骨骼绑定/index.html`.
+
+Current progress:
+- Confirmed the project is designed to run through a local static server, not direct `file://`.
+- Installed npm dependencies with `npm install`; `node_modules/three` is now present.
+- Started a hidden Python static server from `D:\codex骨骼绑定` on `http://localhost:8780/index.html`.
+- Server logs are written under `logs/http_server_20260508_201443*.log`.
+- Reverted an incomplete in-progress UI addition in `index.html` so the currently opened app stays on the previous stable functional surface.
+
+Files changed:
+- `CURRENT_STATE.md`
+- `package-lock.json` and `package.json` unchanged by content; `node_modules/` installed locally and ignored by Git.
+
+Commands run:
+- `npm install`
+- `Start-Process python -ArgumentList @('-m','http.server','8780') ...`
+- `Invoke-WebRequest http://localhost:8780/index.html`
+- `npm run check`
+- Headless Edge smoke test against `http://localhost:8780/index.html`
+
+Validation result: PASS
+
+Current blocking issue:
+- Codex in-app browser automation could not attach to the current in-app browser backend, so the tab was not navigated automatically.
+
+Next step:
+- In the in-app browser address bar, open `http://localhost:8780/index.html` instead of the current `file://` URL.
+- After this local run issue is confirmed fixed, continue the planned human mapping / quick Pose / timeline upgrade work.
+
 ## GitHub Handoff Upload - 2026-05-08
 
 Current objective:

@@ -6,7 +6,8 @@
   "scripts": {
     "start": "python -m http.server 8780",
     "check": "node --check app.js",
-    "validate:import": "node scripts/validate_demo_import.mjs"
+    "validate:import": "node scripts/validate_demo_import.mjs",
+    "tutorial:video": "node scripts/create_tutorial_video.mjs"
   },
   "dependencies": {
     "three": "0.164.1"

@@ -1,301 +1,266 @@
-<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>动作快速调整器 Demo</title>
+  <title>动作生成流水线演示</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="./styles.css">
+  <script>
+    (() => {
+      if (window.location.protocol !== "file:") return;
+
+      const localUrl = "http://localhost:8780/index.html";
+
+      const showNotice = (serverReady) => {
+        if (document.querySelector(".file-mode-notice")) return;
+
+        const notice = document.createElement("div");
+        notice.className = "file-mode-notice";
+        notice.innerHTML = `
+          <div class="file-mode-card">
+            <strong>请用本地服务器打开</strong>
+            <span>${serverReady
+              ? `检测到服务器已启动，正在跳转到 ${localUrl}`
+              : `当前是 file:// 路径，3D 模块和导入功能会加载不稳定。请先双击 start_demo.bat 启动服务器，再打开 ${localUrl}`}</span>
+            <button type="button">${serverReady ? "立即跳转" : "打开正确地址"}</button>
+          </div>
+        `;
+        notice.querySelector("button").addEventListener("click", () => {
+          window.location.href = localUrl;
+        });
+        document.body.appendChild(notice);
+      };
+
+      const checkServer = () => {
+        fetch(localUrl, { cache: "no-store", mode: "no-cors" })
+          .then(() => {
+            showNotice(true);
+            window.setTimeout(() => {
+              window.location.replace(localUrl);
+            }, 700);
+          })
+          .catch(() => showNotice(false));
+      };
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", checkServer, { once: true });
+      } else {
+        checkServer();
+      }
+    })();
+  </script>
 </head>
 <body>
   <main class="app-shell">
-    <section class="stage-panel" aria-label="模型和骨架视图">
-      <header class="top-bar">
+    <section class="stage-panel" aria-label="动作生成视口">
+      <header class="pipeline-header">
         <div class="brand-block">
-          <div class="app-title">动作快速调整器 Demo</div>
-          <div class="status-line" id="statusLine">骨架编辑模式：拖动彩色关节可生成子骨骼</div>
+          <h1>动作生成流水线</h1>
+          <p>命令接口驱动的人形骨架 v1 动作闭环</p>
         </div>
-        <div class="transform-switch" role="group" aria-label="Blender 风格变换工具">
-          <button id="transformTranslateButton" class="transform-button is-active" data-transform="translate">移动 G</button>
-          <button id="transformRotateButton" class="transform-button" data-transform="rotate">旋转 R</button>
-          <button id="transformScaleButton" class="transform-button" data-transform="scale">缩放 S</button>
-          <button id="transformSpaceButton" class="transform-button space-button">局部</button>
-        </div>
-        <div class="mode-switch" role="group" aria-label="模式切换">
-          <button class="mode-button is-active" data-mode="build">骨架搭建 Edit</button>
-          <button class="mode-button" data-mode="pose">姿势调整 Pose</button>
-          <button class="mode-button" data-mode="paint">权重笔刷</button>
-          <button class="mode-button" data-mode="motion">动作模板</button>
+        <nav class="flow-steps" aria-label="流水线阶段">
+          <button class="flow-step is-active" data-stage="model"><span>1</span>模型</button>
+          <button class="flow-step" data-stage="skeleton"><span>2</span>骨架</button>
+          <button class="flow-step" data-stage="ik"><span>3</span>IK 控制器</button>
+          <button class="flow-step" data-stage="motion"><span>4</span>动作模板</button>
+          <button class="flow-step" data-stage="validate"><span>5</span>验证 / 修正</button>
+          <button class="flow-step" data-stage="export"><span>6</span>导出</button>
+        </nav>
+        <div class="status-strip" aria-label="流水线状态">
+          <div><span>模型</span><strong id="statusModel">无</strong></div>
+          <div><span>骨架</span><strong id="statusSkeleton">缺失</strong></div>
+          <div><span>IK 控制器</span><strong id="statusIk">0</strong></div>
+          <div><span>关键帧</span><strong id="statusKeyframes">0</strong></div>
+          <div><span>当前帧</span><strong id="statusFrame">1 / 24</strong></div>
+          <div><span>未保存</span><strong id="statusDirty">否</strong></div>
+          <div><span>验证</span><strong id="statusValidation">有问题</strong></div>
         </div>
       </header>
 
       <div class="viewport-wrap">
-        <canvas id="rigCanvas"></canvas>
-        <div class="viewport-hud">
-          <div class="hud-card hud-blue">
-            <span class="hud-label">当前骨骼</span>
-            <strong id="hudBoneName">hips</strong>
-          </div>
-          <div class="hud-card hud-green">
-            <span class="hud-label">关键帧</span>
-            <strong id="hudKeyframes">0</strong>
-          </div>
-          <div class="hud-card hud-amber">
-            <span class="hud-label">地面</span>
-            <strong>Y = 0</strong>
-          </div>
-          <div class="hud-card hud-purple hud-frame-card">
-            <span class="hud-label">当前帧</span>
-            <strong id="hudFrameState">1 未保存</strong>
-          </div>
+        <canvas id="rigCanvas" tabindex="0" aria-label="3D 视口"></canvas>
+        <div class="viewport-toggles" aria-label="显示选项">
+          <label><input id="showSkeletonLabels" type="checkbox"> 骨架标签</label>
+          <label><input id="showIkControls" type="checkbox" checked> IK 控制器</label>
+          <label><input id="showBoneColors" type="checkbox" checked> 骨骼颜色</label>
+          <label><input id="showFootLocks" type="checkbox" checked> 脚底锁定</label>
+          <label><input id="showMotionPaths" type="checkbox" checked> 运动路径</label>
+          <label><input id="showGroundPlane" type="checkbox" checked> 地面</label>
+          <label><input id="showValidationIssues" type="checkbox" checked> 验证问题</label>
         </div>
-        <div class="view-help">
-          <span>中键/右键旋转视图</span>
-          <span>Shift+中键平移</span>
-          <span>Alt+左键旋转</span>
-          <span>滚轮缩放</span>
-          <span>XYZ 彩色坐标轴</span>
-          <span>Tab 切换 Edit/Pose</span>
-          <span>骨架模式：点选关节，拖远生成子骨骼</span>
-          <span>姿势模式：G/R/S 或变换环调整骨骼</span>
-          <span>权重模式：在模型上涂抹颜色点</span>
+        <div class="viewport-opacity-controls" aria-label="视图透明度控制">
+          <label>
+            <span>模型</span>
+            <input id="viewportModelOpacityInput" type="range" min="0.15" max="1" step="0.01" value="0.72">
+            <strong id="viewportModelOpacityValue">0.72</strong>
+          </label>
+          <label>
+            <span>骨架</span>
+            <input id="skeletonOpacityInput" type="range" min="0.05" max="0.9" step="0.01" value="0.28">
+            <strong id="skeletonOpacityValue">0.28</strong>
+          </label>
+          <label>
+            <span>控制器</span>
+            <input id="controlOpacityInput" type="range" min="0.05" max="0.9" step="0.01" value="0.32">
+            <strong id="controlOpacityValue">0.32</strong>
+          </label>
+        </div>
+        <div class="viewport-help">
+          <span>左键拖动 IK 控制器</span>
+          <span>中键旋转视图</span>
+          <span>Shift + 中键平移</span>
+          <span>Ctrl + 中键 / 滚轮缩放</span>
+          <span>Alt + 左键可替代中键</span>
         </div>
       </div>
 
       <footer class="timeline-panel">
         <div class="timeline-head">
-          <div class="timeline-title">
-            <strong>24 帧走路循环</strong>
-            <span id="playbackState">停止</span>
-          </div>
-          <div class="frame-selector" aria-label="当前帧选择">
-            <button id="prevFrameButton" class="frame-step-button" type="button" aria-label="上一帧">‹</button>
-            <label for="frameNumberInput">当前帧</label>
-            <input id="frameNumberInput" class="frame-number-input" type="number" min="1" max="25" step="1" value="1">
-            <span id="frameRangeLabel">/ 25</span>
-            <input id="frameRangeInput" class="frame-range-input" type="range" min="1" max="25" step="1" value="1" aria-label="拖动选择帧">
-            <button id="nextFrameButton" class="frame-step-button" type="button" aria-label="下一帧">›</button>
-          </div>
-          <div class="timeline-actions">
-            <button id="saveKeyframeButton">保存当前帧</button>
-            <button id="walkTemplateButton">生成走路</button>
-            <button id="smoothButton">优化过渡</button>
-            <button id="playButton">播放</button>
+          <strong>8 姿势走路关键帧</strong>
+          <div class="timeline-metrics">
+            <span>关键姿势：<strong id="timelineKeyPoseCount">0 / 8</strong></span>
+            <span>播放帧率：<strong>24</strong></span>
+            <span>时间轴帧：<strong>1-24</strong></span>
+            <span>循环：<strong id="timelineLoopState">开</strong></span>
           </div>
         </div>
-        <div class="keyframe-records" aria-label="已记录的关键帧">
-          <span class="record-label">已记录帧</span>
-          <div id="keyframeRecordList" class="keyframe-record-list"></div>
-          <strong id="currentFrameSaveState" class="frame-save-state">第 1 帧未保存</strong>
+        <div class="timeline-transport" aria-label="时间轴播放控制">
+          <button id="timelinePlayButton" type="button">播放</button>
+          <button id="timelineStopButton" type="button">停止</button>
+          <button id="timelineSaveFrameButton" type="button">保存当前帧</button>
+          <button id="timelineSmoothButton" type="button">平滑当前段</button>
+          <label>
+            <span>当前帧</span>
+            <input id="timelineFrameSlider" type="range" min="1" max="24" step="1" value="1">
+            <strong id="timelineCurrentFrameValue">1 / 24</strong>
+          </label>
         </div>
-        <div class="timeline-track" id="timelineTrack" aria-label="关键帧时间轴"></div>
+        <div id="timelineFrameTicks" class="timeline-frame-ticks" aria-label="1 到 24 帧"></div>
+        <div id="timelineKeyframes" class="timeline-keyframes" aria-label="8 个关键姿势"></div>
       </footer>
     </section>
 
-    <aside class="control-panel" aria-label="调整窗口">
-      <section class="tool-card card-cyan">
-        <div class="card-title">
-          <span class="swatch"></span>
-          <div>
-            <h2>模型</h2>
-            <p>导入 GLB 或使用项目角色</p>
-          </div>
-        </div>
-        <div class="button-grid">
-          <label class="file-button">
-            导入 GLB
-            <input id="modelFileInput" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json">
-          </label>
-          <button id="loadProjectModelButton">加载测试模型</button>
-          <button id="ghostButton">半透明模型</button>
-          <button id="resetCameraButton">重置视角</button>
-        </div>
-        <label class="slider-row compact-slider">
-          <span>人物透明</span>
-          <input id="modelOpacityInput" type="range" min="0.08" max="1" step="0.01" value="0.58">
-          <strong id="modelOpacityValue">0.58</strong>
+    <aside class="inspector-panel" aria-label="阶段检查器">
+      <section class="inspector-section is-active" data-panel="model">
+        <h2>模型</h2>
+        <button id="loadTestDummyButton">加载测试假人</button>
+        <label class="file-button">
+          导入 GLB
+          <input id="modelFileInput" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json">
         </label>
-        <div class="import-status" aria-live="polite">
-          <div class="import-status-text">
-            <span id="importStatusText">未加载外部模型</span>
-            <strong id="importSizeText">0 MB</strong>
+        <label class="field-row">
+          <span>模型透明度</span>
+          <input id="modelOpacityInput" type="range" min="0.15" max="1" step="0.01" value="0.72">
+          <strong id="modelOpacityValue">0.72</strong>
+        </label>
+        <button id="resetViewButton">重置视角</button>
+      </section>
+
+      <section class="inspector-section" data-panel="skeleton">
+        <h2>骨架</h2>
+        <div class="button-row">
+          <button id="createSkeletonButton">默认 / 映射 Humanoid_v1</button>
+          <button id="createSourceSkeletonButton">视觉辅助适配骨架</button>
+        </div>
+        <div class="mapping-summary">
+          <span>导入骨骼</span><strong id="sourceBoneCountValue">0</strong>
+          <span>T-Pose 基准</span><strong id="restPoseValue">未读取</strong>
+          <span>映射完成</span><strong id="mappingCountValue">0 / 19</strong>
+        </div>
+        <div class="mapping-workspace" aria-label="T-Pose 骨骼映射">
+          <div class="mapping-column">
+            <h3>标准关节点</h3>
+            <div id="humanoidJointList" class="mapping-list"></div>
           </div>
-          <progress id="importProgress" max="100" value="0"></progress>
+          <div class="mapping-column">
+            <h3>导入模型骨骼</h3>
+            <div id="sourceBoneList" class="mapping-list"></div>
+          </div>
+        </div>
+        <label class="field-row compact">
+          <span>选中骨骼</span>
+          <select id="selectedBoneSelect"></select>
+        </label>
+        <div class="info-grid">
+          <span>骨骼名称</span><strong id="boneNameValue">无</strong>
+          <span>父级</span><strong id="boneParentValue">无</strong>
+          <span>长度</span><strong id="boneLengthValue">0.00m</strong>
+          <span>左右侧</span><strong id="boneSideValue">中轴</strong>
+          <span>颜色规则</span><strong id="boneColorRuleValue">中轴 = 绿色</strong>
         </div>
       </section>
 
-      <section class="tool-card card-blue">
-        <div class="card-title">
-          <span class="swatch"></span>
-          <div>
-            <h2>骨架搭建</h2>
-            <p>选中端点后直接拖出子骨骼</p>
-          </div>
+      <section class="inspector-section" data-panel="ik">
+        <h2>IK 控制器</h2>
+        <button id="createIkButton">创建 IK 控制器</button>
+        <label class="field-row compact">
+          <span>选中控制器</span>
+          <select id="selectedControlSelect"></select>
+        </label>
+        <div class="xyz-grid">
+          <label>X <input id="ikTargetX" type="number" step="0.05" value="0"></label>
+          <label>Y <input id="ikTargetY" type="number" step="0.05" value="0"></label>
+          <label>Z <input id="ikTargetZ" type="number" step="0.05" value="0"></label>
         </div>
-        <div class="button-grid">
-          <button id="templateHumanButton">人形模板</button>
-          <button id="newRootButton">新建根骨骼</button>
-          <button id="mirrorBranchButton">镜像分支</button>
-          <button id="deleteBoneButton">删除骨骼</button>
-        </div>
-        <label class="input-row">
-          <span>镜像方向</span>
-          <select id="mirrorAxisSelect">
-            <option value="characterRight" selected>角色左右</option>
-            <option value="characterForward">角色前后</option>
-            <option value="worldX">世界 X</option>
-            <option value="worldZ">世界 Z</option>
-          </select>
-        </label>
-        <label class="input-row">
-          <span>骨骼名称</span>
-          <input id="boneNameInput" type="text" value="hips">
-        </label>
-        <label class="input-row">
-          <span>显示颜色</span>
-          <input id="boneColorInput" type="color" value="#4fc3ff">
-        </label>
-        <label class="slider-row compact-slider">
-          <span>骨骼透明</span>
-          <input id="boneOpacityInput" type="range" min="0.16" max="1" step="0.01" value="0.78">
-          <strong id="boneOpacityValue">0.78</strong>
-        </label>
-        <label class="slider-row compact-slider">
-          <span>骨骼粗细</span>
-          <input id="boneThicknessInput" type="range" min="0.45" max="1.85" step="0.01" value="1">
-          <strong id="boneThicknessValue">1.00</strong>
-        </label>
-        <label class="slider-row compact-slider">
-          <span>节点大小</span>
-          <input id="jointSizeInput" type="range" min="0.55" max="1.85" step="0.01" value="1">
-          <strong id="jointSizeValue">1.00</strong>
-        </label>
-        <label class="toggle-row">
-          <span>允许 G 拉长骨骼</span>
-          <input id="poseStretchToggle" type="checkbox">
-        </label>
-        <div class="metric-grid">
-          <div class="metric">
-            <span>长度</span>
-            <strong id="boneLengthValue">0.00m</strong>
-          </div>
-          <div class="metric">
-            <span>父级</span>
-            <strong id="parentBoneValue">无</strong>
-          </div>
-        </div>
+        <button id="setIkTargetButton">设置 IK 目标</button>
+        <button id="insertKeyframeButton">插入关键帧</button>
+        <button id="smoothKeyframesButton">平滑当前段</button>
       </section>
 
-      <section class="tool-card card-magenta">
-        <div class="card-title">
-          <span class="swatch"></span>
-          <div>
-            <h2>权重笔刷</h2>
-            <p>灰色无权重，蓝色已绑定，亮色为当前骨骼</p>
-          </div>
-        </div>
-        <div class="weight-legend">
-          <span><i class="legend-current"></i>当前骨骼</span>
-          <span><i class="legend-bound"></i>其他绑定</span>
-          <span><i class="legend-neutral"></i>无色模型</span>
-        </div>
-        <div class="segmented weight-tool-switch">
-          <button class="weight-tool is-active" data-weight-tool="select">选择骨骼</button>
-          <button class="weight-tool" data-weight-tool="brush">涂刷权重</button>
-        </div>
-        <label class="input-row">
-          <span>目标骨骼</span>
-          <select id="weightBoneSelect"></select>
-        </label>
-        <label class="slider-row">
-          <span>半径</span>
-          <input id="brushRadiusInput" type="range" min="0.08" max="0.75" step="0.01" value="0.28">
-          <strong id="brushRadiusValue">0.28</strong>
-        </label>
-        <label class="slider-row">
-          <span>强度</span>
-          <input id="brushStrengthInput" type="range" min="0.05" max="1" step="0.01" value="0.45">
-          <strong id="brushStrengthValue">0.45</strong>
-        </label>
-        <div class="segmented">
-          <button class="paint-mode is-active" data-paint="add">增加</button>
-          <button class="paint-mode" data-paint="subtract">减少</button>
-          <button class="paint-mode" data-paint="smooth">平滑</button>
+      <section class="inspector-section" data-panel="motion">
+        <h2>动作模板</h2>
+        <button id="applyWalkButton">应用 8 姿势走路模板</button>
+        <div class="button-row">
+          <button id="playButton">播放</button>
+          <button id="stopButton">停止</button>
         </div>
         <label class="toggle-row">
-          <span>显示调试点云</span>
-          <input id="weightPointsToggle" type="checkbox">
+          <span>循环</span>
+          <input id="loopToggle" type="checkbox" checked>
         </label>
+        <div id="keyframeList" class="keyframe-list"></div>
       </section>
 
-      <section class="tool-card card-green">
-        <div class="card-title">
-          <span class="swatch"></span>
-          <div>
-            <h2>动作参数</h2>
-            <p>生成关键帧后仍可手动调整</p>
-          </div>
-        </div>
-        <label class="slider-row">
-          <span>步幅</span>
-          <input id="strideInput" type="range" min="0.15" max="1.2" step="0.01" value="0.62">
-          <strong id="strideValue">0.62</strong>
-        </label>
-        <label class="slider-row">
-          <span>骨盆起伏</span>
-          <input id="hipBounceInput" type="range" min="0" max="0.22" step="0.01" value="0.08">
-          <strong id="hipBounceValue">0.08</strong>
-        </label>
-        <label class="slider-row">
-          <span>手臂摆动</span>
-          <input id="armSwingInput" type="range" min="0" max="0.9" step="0.01" value="0.42">
-          <strong id="armSwingValue">0.42</strong>
-        </label>
-        <label class="slider-row">
-          <span>过渡平滑</span>
-          <input id="smoothnessInput" type="range" min="0" max="1" step="0.01" value="0.66">
-          <strong id="smoothnessValue">0.66</strong>
-        </label>
-        <label class="input-row">
-          <span>动作前向</span>
-          <select id="walkDirectionSelect">
-            <option value="auto" selected>角色前方</option>
-            <option value="reverse">角色后方</option>
-            <option value="right">角色右侧</option>
-            <option value="left">角色左侧</option>
-          </select>
-        </label>
-      </section>
-
-      <section class="tool-card card-amber">
-        <div class="card-title">
-          <span class="swatch"></span>
-          <div>
-            <h2>地面与约束</h2>
-            <p>接触帧清晰显示，便于修脚滑</p>
-          </div>
-        </div>
-        <div class="toggle-list">
-          <label><input id="groundToggle" type="checkbox" checked> 显示准确地面</label>
-          <label><input id="contactToggle" type="checkbox" checked> 显示脚底接触点</label>
-          <label><input id="centerToggle" type="checkbox" checked> 显示重心线</label>
+      <section class="inspector-section" data-panel="validate">
+        <h2>验证 / 修正</h2>
+        <button id="validateMotionButton">验证动作</button>
+        <div class="validation-grid">
+          <span>验证报告</span><strong id="validationSummary">未运行</strong>
+          <span>脚底滑动</span><strong id="validationFootSliding">未运行</strong>
+          <span>膝盖翻转</span><strong id="validationKneeFlip">未运行</strong>
+          <span>循环断点</span><strong id="validationLoop">未运行</strong>
+          <span>骨骼身份错误</span><strong id="validationIdentity">未运行</strong>
         </div>
       </section>
 
-      <section class="tool-card card-purple">
-        <div class="card-title">
-          <span class="swatch"></span>
-          <div>
-            <h2>输出</h2>
-            <p>当前 demo 先导出骨架/关键帧 JSON</p>
-          </div>
-        </div>
-        <div class="button-grid">
-          <button id="exportJsonButton">导出 JSON</button>
-          <button id="clearButton">清空场景</button>
-        </div>
-        <textarea id="exportPreview" readonly spellcheck="false" aria-label="导出预览"></textarea>
+      <section class="inspector-section" data-panel="export">
+        <h2>导出</h2>
+        <button id="exportJsonButton">导出动作 JSON</button>
+        <button id="importJsonButton">导入动作 JSON</button>
+        <textarea id="motionJsonText" spellcheck="false" aria-label="动作 JSON"></textarea>
       </section>
+
+      <div class="undo-redo-bar">
+        <button id="undoButton">撤销</button>
+        <button id="redoButton">重做</button>
+      </div>
+
+      <details class="debug-panel" open>
+        <summary>命令接口调试</summary>
+        <div class="debug-grid">
+          <span>最近命令</span><strong id="debugLastCommand">无</strong>
+          <span>最近结果</span><pre id="debugLastResult">无</pre>
+          <span>最近错误</span><pre id="debugLastError">无</pre>
+          <span>撤销栈数量</span><strong id="debugUndoCount">0</strong>
+          <span>重做栈数量</span><strong id="debugRedoCount">0</strong>
+        </div>
+        <h3>命令日志最近 20 条</h3>
+        <ol id="debugCommandLog" class="command-log"></ol>
+        <h3>动作状态摘要</h3>
+        <pre id="debugStateSummary"></pre>
+        <h3>验证报告</h3>
+        <pre id="debugValidationReport"></pre>
+      </details>
     </aside>
   </main>
 
