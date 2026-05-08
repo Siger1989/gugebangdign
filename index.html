@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>动作快速调整器 Demo</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="stage-panel" aria-label="模型和骨架视图">
+      <header class="top-bar">
+        <div class="brand-block">
+          <div class="app-title">动作快速调整器 Demo</div>
+          <div class="status-line" id="statusLine">骨架编辑模式：拖动彩色关节可生成子骨骼</div>
+        </div>
+        <div class="transform-switch" role="group" aria-label="Blender 风格变换工具">
+          <button id="transformTranslateButton" class="transform-button is-active" data-transform="translate">移动 G</button>
+          <button id="transformRotateButton" class="transform-button" data-transform="rotate">旋转 R</button>
+          <button id="transformScaleButton" class="transform-button" data-transform="scale">缩放 S</button>
+          <button id="transformSpaceButton" class="transform-button space-button">局部</button>
+        </div>
+        <div class="mode-switch" role="group" aria-label="模式切换">
+          <button class="mode-button is-active" data-mode="build">骨架搭建 Edit</button>
+          <button class="mode-button" data-mode="pose">姿势调整 Pose</button>
+          <button class="mode-button" data-mode="paint">权重笔刷</button>
+          <button class="mode-button" data-mode="motion">动作模板</button>
+        </div>
+      </header>
+
+      <div class="viewport-wrap">
+        <canvas id="rigCanvas"></canvas>
+        <div class="viewport-hud">
+          <div class="hud-card hud-blue">
+            <span class="hud-label">当前骨骼</span>
+            <strong id="hudBoneName">hips</strong>
+          </div>
+          <div class="hud-card hud-green">
+            <span class="hud-label">关键帧</span>
+            <strong id="hudKeyframes">0</strong>
+          </div>
+          <div class="hud-card hud-amber">
+            <span class="hud-label">地面</span>
+            <strong>Y = 0</strong>
+          </div>
+          <div class="hud-card hud-purple hud-frame-card">
+            <span class="hud-label">当前帧</span>
+            <strong id="hudFrameState">1 未保存</strong>
+          </div>
+        </div>
+        <div class="view-help">
+          <span>中键/右键旋转视图</span>
+          <span>Shift+中键平移</span>
+          <span>Alt+左键旋转</span>
+          <span>滚轮缩放</span>
+          <span>XYZ 彩色坐标轴</span>
+          <span>Tab 切换 Edit/Pose</span>
+          <span>骨架模式：点选关节，拖远生成子骨骼</span>
+          <span>姿势模式：G/R/S 或变换环调整骨骼</span>
+          <span>权重模式：在模型上涂抹颜色点</span>
+        </div>
+      </div>
+
+      <footer class="timeline-panel">
+        <div class="timeline-head">
+          <div class="timeline-title">
+            <strong>24 帧走路循环</strong>
+            <span id="playbackState">停止</span>
+          </div>
+          <div class="frame-selector" aria-label="当前帧选择">
+            <button id="prevFrameButton" class="frame-step-button" type="button" aria-label="上一帧">‹</button>
+            <label for="frameNumberInput">当前帧</label>
+            <input id="frameNumberInput" class="frame-number-input" type="number" min="1" max="25" step="1" value="1">
+            <span id="frameRangeLabel">/ 25</span>
+            <input id="frameRangeInput" class="frame-range-input" type="range" min="1" max="25" step="1" value="1" aria-label="拖动选择帧">
+            <button id="nextFrameButton" class="frame-step-button" type="button" aria-label="下一帧">›</button>
+          </div>
+          <div class="timeline-actions">
+            <button id="saveKeyframeButton">保存当前帧</button>
+            <button id="walkTemplateButton">生成走路</button>
+            <button id="smoothButton">优化过渡</button>
+            <button id="playButton">播放</button>
+          </div>
+        </div>
+        <div class="keyframe-records" aria-label="已记录的关键帧">
+          <span class="record-label">已记录帧</span>
+          <div id="keyframeRecordList" class="keyframe-record-list"></div>
+          <strong id="currentFrameSaveState" class="frame-save-state">第 1 帧未保存</strong>
+        </div>
+        <div class="timeline-track" id="timelineTrack" aria-label="关键帧时间轴"></div>
+      </footer>
+    </section>
+
+    <aside class="control-panel" aria-label="调整窗口">
+      <section class="tool-card card-cyan">
+        <div class="card-title">
+          <span class="swatch"></span>
+          <div>
+            <h2>模型</h2>
+            <p>导入 GLB 或使用项目角色</p>
+          </div>
+        </div>
+        <div class="button-grid">
+          <label class="file-button">
+            导入 GLB
+            <input id="modelFileInput" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json">
+          </label>
+          <button id="loadProjectModelButton">加载测试模型</button>
+          <button id="ghostButton">半透明模型</button>
+          <button id="resetCameraButton">重置视角</button>
+        </div>
+        <label class="slider-row compact-slider">
+          <span>人物透明</span>
+          <input id="modelOpacityInput" type="range" min="0.08" max="1" step="0.01" value="0.58">
+          <strong id="modelOpacityValue">0.58</strong>
+        </label>
+        <div class="import-status" aria-live="polite">
+          <div class="import-status-text">
+            <span id="importStatusText">未加载外部模型</span>
+            <strong id="importSizeText">0 MB</strong>
+          </div>
+          <progress id="importProgress" max="100" value="0"></progress>
+        </div>
+      </section>
+
+      <section class="tool-card card-blue">
+        <div class="card-title">
+          <span class="swatch"></span>
+          <div>
+            <h2>骨架搭建</h2>
+            <p>选中端点后直接拖出子骨骼</p>
+          </div>
+        </div>
+        <div class="button-grid">
+          <button id="templateHumanButton">人形模板</button>
+          <button id="newRootButton">新建根骨骼</button>
+          <button id="mirrorBranchButton">镜像分支</button>
+          <button id="deleteBoneButton">删除骨骼</button>
+        </div>
+        <label class="input-row">
+          <span>镜像方向</span>
+          <select id="mirrorAxisSelect">
+            <option value="characterRight" selected>角色左右</option>
+            <option value="characterForward">角色前后</option>
+            <option value="worldX">世界 X</option>
+            <option value="worldZ">世界 Z</option>
+          </select>
+        </label>
+        <label class="input-row">
+          <span>骨骼名称</span>
+          <input id="boneNameInput" type="text" value="hips">
+        </label>
+        <label class="input-row">
+          <span>显示颜色</span>
+          <input id="boneColorInput" type="color" value="#4fc3ff">
+        </label>
+        <label class="slider-row compact-slider">
+          <span>骨骼透明</span>
+          <input id="boneOpacityInput" type="range" min="0.16" max="1" step="0.01" value="0.78">
+          <strong id="boneOpacityValue">0.78</strong>
+        </label>
+        <label class="slider-row compact-slider">
+          <span>骨骼粗细</span>
+          <input id="boneThicknessInput" type="range" min="0.45" max="1.85" step="0.01" value="1">
+          <strong id="boneThicknessValue">1.00</strong>
+        </label>
+        <label class="slider-row compact-slider">
+          <span>节点大小</span>
+          <input id="jointSizeInput" type="range" min="0.55" max="1.85" step="0.01" value="1">
+          <strong id="jointSizeValue">1.00</strong>
+        </label>
+        <label class="toggle-row">
+          <span>允许 G 拉长骨骼</span>
+          <input id="poseStretchToggle" type="checkbox">
+        </label>
+        <div class="metric-grid">
+          <div class="metric">
+            <span>长度</span>
+            <strong id="boneLengthValue">0.00m</strong>
+          </div>
+          <div class="metric">
+            <span>父级</span>
+            <strong id="parentBoneValue">无</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="tool-card card-magenta">
+        <div class="card-title">
+          <span class="swatch"></span>
+          <div>
+            <h2>权重笔刷</h2>
+            <p>灰色无权重，蓝色已绑定，亮色为当前骨骼</p>
+          </div>
+        </div>
+        <div class="weight-legend">
+          <span><i class="legend-current"></i>当前骨骼</span>
+          <span><i class="legend-bound"></i>其他绑定</span>
+          <span><i class="legend-neutral"></i>无色模型</span>
+        </div>
+        <div class="segmented weight-tool-switch">
+          <button class="weight-tool is-active" data-weight-tool="select">选择骨骼</button>
+          <button class="weight-tool" data-weight-tool="brush">涂刷权重</button>
+        </div>
+        <label class="input-row">
+          <span>目标骨骼</span>
+          <select id="weightBoneSelect"></select>
+        </label>
+        <label class="slider-row">
+          <span>半径</span>
+          <input id="brushRadiusInput" type="range" min="0.08" max="0.75" step="0.01" value="0.28">
+          <strong id="brushRadiusValue">0.28</strong>
+        </label>
+        <label class="slider-row">
+          <span>强度</span>
+          <input id="brushStrengthInput" type="range" min="0.05" max="1" step="0.01" value="0.45">
+          <strong id="brushStrengthValue">0.45</strong>
+        </label>
+        <div class="segmented">
+          <button class="paint-mode is-active" data-paint="add">增加</button>
+          <button class="paint-mode" data-paint="subtract">减少</button>
+          <button class="paint-mode" data-paint="smooth">平滑</button>
+        </div>
+        <label class="toggle-row">
+          <span>显示调试点云</span>
+          <input id="weightPointsToggle" type="checkbox">
+        </label>
+      </section>
+
+      <section class="tool-card card-green">
+        <div class="card-title">
+          <span class="swatch"></span>
+          <div>
+            <h2>动作参数</h2>
+            <p>生成关键帧后仍可手动调整</p>
+          </div>
+        </div>
+        <label class="slider-row">
+          <span>步幅</span>
+          <input id="strideInput" type="range" min="0.15" max="1.2" step="0.01" value="0.62">
+          <strong id="strideValue">0.62</strong>
+        </label>
+        <label class="slider-row">
+          <span>骨盆起伏</span>
+          <input id="hipBounceInput" type="range" min="0" max="0.22" step="0.01" value="0.08">
+          <strong id="hipBounceValue">0.08</strong>
+        </label>
+        <label class="slider-row">
+          <span>手臂摆动</span>
+          <input id="armSwingInput" type="range" min="0" max="0.9" step="0.01" value="0.42">
+          <strong id="armSwingValue">0.42</strong>
+        </label>
+        <label class="slider-row">
+          <span>过渡平滑</span>
+          <input id="smoothnessInput" type="range" min="0" max="1" step="0.01" value="0.66">
+          <strong id="smoothnessValue">0.66</strong>
+        </label>
+        <label class="input-row">
+          <span>动作前向</span>
+          <select id="walkDirectionSelect">
+            <option value="auto" selected>角色前方</option>
+            <option value="reverse">角色后方</option>
+            <option value="right">角色右侧</option>
+            <option value="left">角色左侧</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="tool-card card-amber">
+        <div class="card-title">
+          <span class="swatch"></span>
+          <div>
+            <h2>地面与约束</h2>
+            <p>接触帧清晰显示，便于修脚滑</p>
+          </div>
+        </div>
+        <div class="toggle-list">
+          <label><input id="groundToggle" type="checkbox" checked> 显示准确地面</label>
+          <label><input id="contactToggle" type="checkbox" checked> 显示脚底接触点</label>
+          <label><input id="centerToggle" type="checkbox" checked> 显示重心线</label>
+        </div>
+      </section>
+
+      <section class="tool-card card-purple">
+        <div class="card-title">
+          <span class="swatch"></span>
+          <div>
+            <h2>输出</h2>
+            <p>当前 demo 先导出骨架/关键帧 JSON</p>
+          </div>
+        </div>
+        <div class="button-grid">
+          <button id="exportJsonButton">导出 JSON</button>
+          <button id="clearButton">清空场景</button>
+        </div>
+        <textarea id="exportPreview" readonly spellcheck="false" aria-label="导出预览"></textarea>
+      </section>
+    </aside>
+  </main>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./node_modules/three/build/three.module.js",
+        "three/addons/": "./node_modules/three/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

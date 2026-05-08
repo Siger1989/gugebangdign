@@ -1,0 +1,17 @@
+{
+  "name": "codex-action-rig-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone Chinese MVP demo for skeleton building, weight painting, and animation keyframe adjustment.",
+  "scripts": {
+    "start": "python -m http.server 8780",
+    "check": "node --check app.js",
+    "validate:import": "node scripts/validate_demo_import.mjs"
+  },
+  "dependencies": {
+    "three": "0.164.1"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.59.1"
+  }
+}
