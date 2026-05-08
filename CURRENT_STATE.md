@@ -1,5 +1,28 @@
 # CURRENT_STATE
 
+## GitHub Handoff Upload - 2026-05-08
+
+Current objective:
+- Upload the completed MVP and handoff documentation to `https://github.com/Siger1989/gugebangdign`.
+
+Current progress:
+- Created `HANDOFF.md` with project positioning, run steps, implemented features, validation results, limitations, and next-phase recommendations.
+- Added `.gitignore` to exclude `node_modules/`, `artifacts/`, logs, and OS metadata.
+- Synced project files into a clean clone at `E:\codex骨骼软件_github_publish`.
+- Committed and pushed:
+  - repository: `https://github.com/Siger1989/gugebangdign`
+  - branch: `main`
+  - commit: `fdf7e69 Add action rig adjustment MVP`
+
+Validation:
+- `npm run check`: PASS before upload.
+- Full `npm run validate:import`: PASS before handoff.
+- Git push to `origin/main`: PASS.
+
+Next step:
+- Continue future work from `E:\codex骨骼软件` locally or clone the GitHub repository.
+- For the next phase, prioritize real GLB animation/weight export and Electron EXE packaging.
+
 ## Pose G Keep-Length Default And Stretch Toggle - 2026-05-08
 
 Current objective:
