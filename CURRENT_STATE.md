@@ -29,6 +29,9 @@ Commands run:
 - `git fetch origin`
 - `npm run check`
 - `npm run validate:import`
+- `git add -- CURRENT_STATE.md HANDOFF.md README.md app.js index.html package.json scripts/validate_demo_import.mjs scripts/create_tutorial_video.mjs start_demo.bat styles.css`
+- `git commit -m "Refactor motion pipeline controls"`
+- `git push origin main`
 
 Validation result: PASS
 
@@ -42,7 +45,8 @@ Current blocking issue:
 - None.
 
 Next step:
-- Stage the intended project changes, commit, and push to `origin/main`.
+- GitHub is updated through commit `6829e8a` on `origin/main`.
+- Continue product work from the current motion-generation pipeline state.
 
 ## Limb IK, Joint Drag Controls, Frame Smoothing - 2026-05-09
 
