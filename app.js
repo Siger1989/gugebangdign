@@ -81,6 +81,7 @@ const HUMANOID_JOINT_NAMES = [
 ];
 
 const OPTIONAL_HUMANOID_MAPPING_JOINTS = new Set(["R_Toe", "L_Toe"]);
+const EXPLICIT_ROTATION_JOINTS = new Set(["Hips", "Spine", "Chest", "Neck", "Head"]);
 
 const HUMANOID_BONE_CONNECTIONS = [
   ["Hips", "Spine"],
@@ -225,6 +226,7 @@ const MotionState = {
   skeleton: null,
   bones: [],
   joints: [],
+  joint_rotations: {},
   ik_controls: [],
   current_frame: 1,
   total_frames: 24,
@@ -641,6 +643,7 @@ const COMMAND_EXECUTORS = {
     MotionState.model = { loaded: true, source: "Test Dummy", type: "test_dummy", opacity: MotionState.model.opacity };
     MotionState.source_bones = [];
     MotionState.humanoid_mapping = {};
+    MotionState.joint_rotations = {};
     MotionState.direction = { forward_sign: 1, yaw_degrees: 0, confirmed: true };
     MotionState.selected_source_bone_id = null;
     MotionState.import_diagnostics = createEmptyImportDiagnostics();
@@ -665,6 +668,7 @@ const COMMAND_EXECUTORS = {
     MotionState.model = { loaded: true, source: file.name, type: "glb_reference", opacity: MotionState.model.opacity };
     MotionState.source_bones = extractSourceBones(Runtime.importedModelScene);
     MotionState.humanoid_mapping = autoMapHumanoidBones(MotionState.source_bones);
+    MotionState.joint_rotations = {};
     MotionState.direction = { forward_sign: inferInitialForwardSign(), yaw_degrees: 0, confirmed: false };
     MotionState.selected_source_bone_id = MotionState.source_bones[0]?.id || null;
     MotionState.import_diagnostics = {
@@ -716,6 +720,7 @@ const COMMAND_EXECUTORS = {
         note: "GLB 未包含 glTF skin/joints；软件按模型包围盒和人形比例估算 Humanoid_v1 骨架。",
       };
       MotionState.joints = joints;
+      MotionState.joint_rotations = {};
       MotionState.bones = bones;
       MotionState.ik_controls = [];
       MotionState.keyframes = [];
@@ -754,6 +759,7 @@ const COMMAND_EXECUTORS = {
       note: "保留导入模型原始骨骼数量和父子层级；模型透明度设为 50%，用于叠加查看骨骼点与模型轮廓。",
     };
     MotionState.joints = joints;
+    MotionState.joint_rotations = {};
     MotionState.bones = bones;
     MotionState.ik_controls = [];
     MotionState.keyframes = [];
@@ -801,6 +807,7 @@ const COMMAND_EXECUTORS = {
       },
     };
     MotionState.joints = joints;
+    MotionState.joint_rotations = {};
     MotionState.bones = bones;
     MotionState.selected_bone = bones[0]?.name || null;
     MotionState.selected_control = null;
@@ -965,6 +972,7 @@ const COMMAND_EXECUTORS = {
       timeline_frame: targetFrame,
       label: "MANUAL",
       joints: deepClone(MotionState.joints),
+      joint_rotations: deepClone(MotionState.joint_rotations),
       ik_controls: deepClone(MotionState.ik_controls),
       foot_locks: inferFootLocksFromControls(),
       interpolation: "linear",
@@ -1014,6 +1022,7 @@ const COMMAND_EXECUTORS = {
       skeleton: MotionState.skeleton,
       bones: MotionState.bones,
       joints: MotionState.joints,
+      joint_rotations: MotionState.joint_rotations,
       ik_controls: MotionState.ik_controls,
       current_frame: MotionState.current_frame,
       total_frames: MotionState.total_frames,
@@ -1045,6 +1054,7 @@ const COMMAND_EXECUTORS = {
     MotionState.direction = data.direction || { forward_sign: 1, confirmed: false };
     MotionState.bones = data.bones || [];
     MotionState.joints = data.joints || [];
+    MotionState.joint_rotations = data.joint_rotations || {};
     MotionState.ik_controls = data.ik_controls || [];
     MotionState.current_frame = clampFrame(data.current_frame || 1);
     MotionState.total_frames = data.total_frames || 24;
@@ -1240,6 +1250,7 @@ function snapshotCoreState() {
     skeleton: MotionState.skeleton,
     bones: MotionState.bones,
     joints: MotionState.joints,
+    joint_rotations: MotionState.joint_rotations,
     ik_controls: MotionState.ik_controls,
     current_frame: MotionState.current_frame,
     total_frames: MotionState.total_frames,
@@ -1734,8 +1745,9 @@ function createHumanoidSkeletonData() {
 
 function rebuildHumanoidSkeletonFromMapping() {
   const { joints, bones } = createHumanoidSkeletonData();
-  MotionState.joints = joints;
-  MotionState.bones = bones;
+    MotionState.joints = joints;
+    MotionState.joint_rotations = {};
+    MotionState.bones = bones;
   MotionState.skeleton = {
     ...(MotionState.skeleton || {}),
     id: "Humanoid_v1",
@@ -1769,6 +1781,7 @@ function createWalk8FKeyframes() {
       timeline_frame: pose.timeline_frame,
       label: pose.label,
       joints,
+      joint_rotations: {},
       ik_controls: createControlsForPose(joints, pose.params.lock),
       foot_locks: pose.params.lock,
       template_id: "walk_cycle_8f",
@@ -2084,6 +2097,11 @@ function shouldDriveHumanoidConnection(parent, child) {
   return !["R_UpperArm", "L_UpperArm", "R_UpperLeg", "L_UpperLeg"].includes(child);
 }
 
+function withExplicitJointRotation(jointName, baseWorldQuaternion) {
+  const explicit = getJointRotationQuaternion(jointName);
+  return explicit ? explicit.clone().multiply(baseWorldQuaternion).normalize() : baseWorldQuaternion;
+}
+
 function driveMappedSourceRigFromJoints(joints) {
   if (Runtime.sourceBoneById.size === 0 || getMappingCount() === 0 || !Array.isArray(joints) || joints.length === 0) {
     return false;
@@ -2096,6 +2114,7 @@ function driveMappedSourceRigFromJoints(joints) {
     setSourceBoneWorldPosition(hipsBone, new THREE.Vector3().fromArray(hipsTarget.position));
   }
 
+  const explicitlyApplied = new Set();
   HUMANOID_BONE_CONNECTIONS.forEach(([parentName, childName]) => {
     if (!shouldDriveHumanoidConnection(parentName, childName)) {
       return;
@@ -2116,8 +2135,23 @@ function driveMappedSourceRigFromJoints(joints) {
     restDir.normalize();
     targetDir.normalize();
     const deltaQuaternion = new THREE.Quaternion().setFromUnitVectors(restDir, targetDir);
-    const desiredWorldQuaternion = deltaQuaternion.multiply(parentRest.worldQuaternion);
+    const desiredWorldQuaternion = withExplicitJointRotation(parentName, deltaQuaternion.multiply(parentRest.worldQuaternion));
+    if (MotionState.joint_rotations?.[parentName]) {
+      explicitlyApplied.add(parentName);
+    }
     setSourceBoneWorldQuaternion(parentBone, desiredWorldQuaternion);
+  });
+  Object.keys(MotionState.joint_rotations || {}).forEach((jointName) => {
+    if (explicitlyApplied.has(jointName)) {
+      return;
+    }
+    const bone = getMappedSourceBoneObject(jointName);
+    const rest = getMappedSourceRest(jointName);
+    const explicit = getJointRotationQuaternion(jointName);
+    if (!bone || !rest || !explicit) {
+      return;
+    }
+    setSourceBoneWorldQuaternion(bone, explicit.clone().multiply(rest.worldQuaternion).normalize());
   });
   Runtime.importedModelScene?.updateMatrixWorld(true);
   return true;
@@ -2138,6 +2172,7 @@ function applyPoseAtFrame(frame) {
   }
   const pose = interpolatePose(clampFrame(frame));
   MotionState.joints = pose.joints;
+  MotionState.joint_rotations = pose.joint_rotations || {};
   MotionState.ik_controls = pose.ik_controls;
   MotionState.current_frame = clampFrame(frame);
   driveMappedSourceRigFromJoints(MotionState.joints);
@@ -2171,6 +2206,7 @@ function interpolatePose(frame) {
     timeline_frame: frame,
     label: prev.label,
     joints: interpolateNamedArrays(prev.joints, next.joints, t),
+    joint_rotations: interpolateJointRotations(prev.joint_rotations, next.joint_rotations, t),
     ik_controls: interpolateNamedArrays(prev.ik_controls, next.ik_controls, t, "id"),
     foot_locks: prev.foot_locks || {},
     template_id: prev.template_id,
@@ -2183,6 +2219,34 @@ function getSortedKeyframes() {
 
 function smoothStep(t) {
   return t * t * (3 - 2 * t);
+}
+
+function getQuaternionFromArray(value) {
+  if (!Array.isArray(value) || value.length !== 4 || value.some((item) => !Number.isFinite(Number(item)))) {
+    return null;
+  }
+  return new THREE.Quaternion(...value.map(Number)).normalize();
+}
+
+function isIdentityQuaternion(quaternion, epsilon = 0.000001) {
+  return Math.abs(quaternion.x) < epsilon
+    && Math.abs(quaternion.y) < epsilon
+    && Math.abs(quaternion.z) < epsilon
+    && Math.abs(quaternion.w - 1) < epsilon;
+}
+
+function interpolateJointRotations(a = {}, b = {}, t = 0) {
+  const result = {};
+  const names = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+  names.forEach((name) => {
+    const qa = getQuaternionFromArray(a?.[name]) || new THREE.Quaternion();
+    const qb = getQuaternionFromArray(b?.[name]) || new THREE.Quaternion();
+    const q = qa.clone().slerp(qb, t).normalize();
+    if (!isIdentityQuaternion(q)) {
+      result[name] = q.toArray();
+    }
+  });
+  return result;
 }
 
 function interpolateNamedArrays(a, b, t, key = "name") {
@@ -2298,6 +2362,26 @@ function translateSkeletonBy(delta) {
   });
 }
 
+function getJointRotationQuaternion(jointName) {
+  return getQuaternionFromArray(MotionState.joint_rotations?.[jointName]);
+}
+
+function accumulateJointRotation(jointName, quaternion) {
+  if (!jointName || !quaternion || quaternion.length() < 0.000001) {
+    return;
+  }
+  if (!MotionState.joint_rotations) {
+    MotionState.joint_rotations = {};
+  }
+  const current = getJointRotationQuaternion(jointName) || new THREE.Quaternion();
+  const next = quaternion.clone().multiply(current).normalize();
+  if (isIdentityQuaternion(next)) {
+    delete MotionState.joint_rotations[jointName];
+  } else {
+    MotionState.joint_rotations[jointName] = next.toArray();
+  }
+}
+
 function moveJointBranch(jointName, targetPosition) {
   const joint = getJoint(jointName);
   if (!joint) {
@@ -2321,6 +2405,9 @@ function rotateJointBranch(jointName, angle, axis) {
   }
   const pivot = new THREE.Vector3().fromArray(joint.position);
   const quaternion = new THREE.Quaternion().setFromAxisAngle(axis.clone().normalize(), angle);
+  if (EXPLICIT_ROTATION_JOINTS.has(jointName)) {
+    accumulateJointRotation(jointName, quaternion);
+  }
   getJointBranchNames(jointName)
     .filter((name) => name !== jointName)
     .forEach((name) => {
@@ -2793,13 +2880,14 @@ function renderIkControls() {
   if (!MotionState.show.ik_controls) {
     return;
   }
-  MotionState.ik_controls.forEach((control) => {
+  MotionState.ik_controls.filter(shouldRenderIkControl).forEach((control) => {
     const color = getSideColor(control.side);
     const mesh = createControlMesh(control, color);
     mesh.position.fromArray(control.position);
     ikGroup.add(mesh);
-    if (MotionState.show.skeleton_labels) {
-      labelGroup.add(makeLabel(translateControlName(control.id), addVec(control.position, [0, 0.045, 0]), color, 0.04, 0.56));
+    if (shouldRenderIkControlLabel(control)) {
+      const labelOffset = control.is_joint_control ? [0, 0.05, 0] : [0, 0.075, 0];
+      labelGroup.add(makeLabel(getIkControlLabel(control), addVec(control.position, labelOffset), color, control.is_joint_control ? 0.034 : 0.043, 0.68));
     }
     if (MotionState.show.foot_locks && control.locked) {
       const lock = new THREE.Mesh(
@@ -2817,6 +2905,43 @@ function renderIkControls() {
       ikGroup.add(lock);
     }
   });
+}
+
+function shouldRenderIkControl(control) {
+  if (!control?.is_joint_control) {
+    return true;
+  }
+  return MotionState.selected_control === control.id;
+}
+
+function shouldPickIkControl(control) {
+  return shouldRenderIkControl(control);
+}
+
+function shouldRenderIkControlLabel(control) {
+  return !control.is_joint_control
+    || MotionState.selected_control === control.id
+    || Runtime.hoveredControlId === control.id
+    || MotionState.show.skeleton_labels;
+}
+
+function getIkControlLabel(control) {
+  if (control.id === "Pelvis_CTRL") return "腰";
+  if (control.id === "R_Hand_IK") return "右手";
+  if (control.id === "L_Hand_IK") return "左手";
+  if (control.id === "R_Foot_IK") return "右脚";
+  if (control.id === "L_Foot_IK") return "左脚";
+  if (control.id === "R_Knee_Pole") return "右膝";
+  if (control.id === "L_Knee_Pole") return "左膝";
+  if (control.id === "R_Elbow_Pole") return "右肘";
+  if (control.id === "L_Elbow_Pole") return "左肘";
+  return control.is_joint_control ? translateBoneName(control.target_joint) : translateControlName(control.id);
+}
+
+function alignGroupToRigBasis(group) {
+  const basis = getRigBasis();
+  const matrix = new THREE.Matrix4().makeBasis(basis.right, basis.up, basis.forward);
+  group.quaternion.setFromRotationMatrix(matrix);
 }
 
 function createControlMesh(control, color) {
@@ -2842,58 +2967,68 @@ function createControlMesh(control, color) {
     depthTest: true,
   });
   if (control.type === "joint") {
-    const size = selected || hovered ? 0.06 : 0.044;
+    const size = selected || hovered ? 0.045 : 0.026;
     const cube = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), solid);
-    const outline = new THREE.Mesh(new THREE.BoxGeometry(size * 1.34, size * 1.34, size * 1.34), wire);
-    const arrow = new THREE.Mesh(new THREE.ConeGeometry(size * 0.34, size * 0.86, 10), wire.clone());
-    arrow.rotation.z = -Math.PI / 2;
-    arrow.position.x = size * 1.2;
+    const outline = new THREE.Mesh(new THREE.BoxGeometry(size * 1.28, size * 1.28, size * 1.28), wire);
     cube.userData = group.userData;
     outline.userData = group.userData;
-    arrow.userData = group.userData;
-    group.add(cube, outline, arrow);
-    addControlHitArea(group, 0.105);
+    group.add(cube, outline);
+    addControlHitArea(group, selected || hovered ? 0.075 : 0.052);
     return group;
   }
+  alignGroupToRigBasis(group);
   if (control.type === "pelvis") {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.135, 0.006, 8, 48), wire);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.007, 8, 56), wire);
     ring.rotation.x = Math.PI / 2;
-    const inner = new THREE.Mesh(new THREE.TorusGeometry(0.088, 0.004, 8, 40), wire.clone());
-    inner.rotation.x = Math.PI / 2;
+    const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.112, 0.112, 0.018, 42, 1, true), wire.clone());
+    const core = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.038, 0.055), solid.clone());
     ring.userData = group.userData;
-    inner.userData = group.userData;
-    group.add(ring, inner);
+    belt.userData = group.userData;
+    core.userData = group.userData;
+    group.add(ring, belt, core);
     addControlHitArea(group, 0.19);
     return group;
   }
   if (control.type === "foot") {
-    const sole = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.012, 0.09), solid);
-    const outline = new THREE.Mesh(new THREE.BoxGeometry(0.162, 0.014, 0.102), wire);
-    const pivot = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.008, 24), solid.clone());
-    pivot.position.y = 0.018;
+    const sole = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.012, 0.105), solid);
+    const outline = new THREE.Mesh(new THREE.BoxGeometry(0.184, 0.014, 0.118), wire);
+    const toe = new THREE.Mesh(new THREE.ConeGeometry(0.052, 0.08, 16), solid.clone());
+    toe.rotation.x = Math.PI / 2;
+    toe.position.z = 0.082;
+    const heel = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.01, 20), wire.clone());
+    heel.position.z = -0.063;
     sole.userData = group.userData;
     outline.userData = group.userData;
-    pivot.userData = group.userData;
-    group.add(sole, outline, pivot);
+    toe.userData = group.userData;
+    heel.userData = group.userData;
+    group.add(sole, outline, toe, heel);
     addControlHitArea(group, 0.16);
     return group;
   }
   if (control.type === "hand") {
-    const cube = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.072, 0.072), wire);
-    const fill = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.052, 0.052), solid.clone());
-    cube.userData = group.userData;
-    fill.userData = group.userData;
-    group.add(cube, fill);
+    const palm = new THREE.Mesh(new THREE.BoxGeometry(0.082, 0.054, 0.07), solid.clone());
+    const outline = new THREE.Mesh(new THREE.BoxGeometry(0.096, 0.066, 0.082), wire);
+    const wrist = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.07, 12), wire.clone());
+    wrist.rotation.z = Math.PI / 2;
+    wrist.position.x = control.side === "R" ? -0.065 : 0.065;
+    palm.userData = group.userData;
+    outline.userData = group.userData;
+    wrist.userData = group.userData;
+    group.add(palm, outline, wrist);
     addControlHitArea(group, 0.15);
     return group;
   }
-  const triangle = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.09, 3), wire);
+  const triangle = new THREE.Mesh(new THREE.ConeGeometry(0.052, 0.095, 3), wire);
   triangle.rotation.x = Math.PI / 2;
-  const fill = new THREE.Mesh(new THREE.ConeGeometry(0.038, 0.064, 3), solid.clone());
+  const fill = new THREE.Mesh(new THREE.ConeGeometry(0.036, 0.066, 3), solid.clone());
   fill.rotation.x = Math.PI / 2;
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.105, 8), wire.clone());
+  stem.rotation.x = Math.PI / 2;
+  stem.position.z = -0.08;
   triangle.userData = group.userData;
   fill.userData = group.userData;
-  group.add(triangle, fill);
+  stem.userData = group.userData;
+  group.add(triangle, fill, stem);
   addControlHitArea(group, 0.16);
   return group;
 }
@@ -3468,6 +3603,7 @@ function getLocalizedMotionStateSummary() {
     "视觉辅助": translateVisualAnalysisStatus(MotionState.visual_analysis.status),
     "骨骼数": MotionState.bones.length,
     "关节数": MotionState.joints.length,
+    "显式旋转": Object.keys(MotionState.joint_rotations || {}).length,
     "核心 IK 控制器": getCoreIkControls().length,
     "关节控制器": getJointControls().length,
     "全部控制器": MotionState.ik_controls.length,
@@ -3928,7 +4064,7 @@ function getBestIkControlPick(hits, event) {
     .map((hit) => {
       const pickData = findPickData(hit.object, "ik_control");
       const control = MotionState.ik_controls.find((item) => item.id === pickData?.control_id);
-      if (!pickData || !control) {
+      if (!pickData || !control || !shouldPickIkControl(control)) {
         return null;
       }
       const projected = new THREE.Vector3().fromArray(control.position).project(camera);
@@ -3954,6 +4090,7 @@ function getClosestIkControlScreenPick(event, maxDistance = 18) {
   const rect = canvas.getBoundingClientRect();
   const mouse = new THREE.Vector2(event.clientX, event.clientY);
   const candidates = MotionState.ik_controls
+    .filter(shouldPickIkControl)
     .map((control) => {
       const projected = new THREE.Vector3().fromArray(control.position).project(camera);
       if (projected.z < -1 || projected.z > 1) {
@@ -4419,6 +4556,7 @@ function getMotionStateSummary() {
     visual_analysis: MotionState.visual_analysis.status,
     bones: MotionState.bones.length,
     joints: MotionState.joints.length,
+    joint_rotation_overrides: Object.keys(MotionState.joint_rotations || {}).length,
     ik_controls: getCoreIkControls().length,
     joint_controls: getJointControls().length,
     all_controls: MotionState.ik_controls.length,

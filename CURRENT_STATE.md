@@ -1,5 +1,44 @@
 # CURRENT_STATE
 
+## IK Control Visual Simplification And Torso Rotation - 2026-05-09
+
+Current objective:
+- Fix IK viewport clutter where all controllers looked alike, and fix torso/pelvis rotation where rotating the waist visually moved hands but did not twist the body.
+
+Current progress:
+- Core IK controls now have distinct simple shapes:
+  - pelvis/waist: green belt ring
+  - hands: palm block with wrist stem
+  - feet: flat sole with toe direction
+  - pole controls: triangular pole markers
+- Core IK controls always show short Chinese labels such as `腰`, `右手`, `左脚`, `右膝`.
+- The 19 ordinary joint controls are no longer rendered as large duplicate boxes by default; only the selected joint control appears as a small control point.
+- IK picking now ignores hidden ordinary joint controls so clicks are less likely to hit the wrong overlapping controller.
+- Added `MotionState.joint_rotations` for explicit torso/waist rotation overrides.
+- `rotate_joint_branch` stores explicit rotation for Hips/Spine/Chest/Neck/Head.
+- Source rig driving now applies explicit joint rotations to mapped source bones, so waist/chest rotation can twist the imported model instead of only moving distant hand positions.
+- Keyframes, interpolation, export/import, undo/redo, and playback now carry `joint_rotations`.
+
+Files changed:
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `HANDOFF.md`
+- `CURRENT_STATE.md`
+
+Validation result: PASS
+
+Validation details:
+- `node --check app.js`: PASS.
+- `node --check scripts\validate_demo_import.mjs`: PASS.
+- `npm run validate:import`: PASS.
+- Imported `sample_models/stylized_3d_character_model.glb` creates Humanoid_v1, IK, Walk_8F, and a regression command rotates `Hips`; source rig Hips quaternion changes after the command.
+- Latest screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_053348Z.png`
+
+Next step:
+- Hard refresh `http://localhost:8780/`.
+- Recreate IK controls. The viewport should show only the 9 core IK controls plus any currently selected joint control.
+
 ## IK Optional Toe Fallback - 2026-05-09
 
 Current objective:

@@ -189,6 +189,19 @@ async function importSampleGlbAndValidateToeFallback() {
   await clickAndExpect("#createIkButton", "create_ik_controls", (state) => (
     state.ik_controls === 9 && state.joint_controls === 19
   ));
+  const beforeRotateDebug = await page.evaluate(() => window.__motionDebug.getSourceRigDebug());
+  await executeCommandAndExpect("rotate_joint_branch", { joint: "Hips", angle: 0.45, axis: [0, 1, 0] }, (state) => (
+    state.joint_rotation_overrides >= 1
+  ));
+  const afterRotateDebug = await page.evaluate(() => window.__motionDebug.getSourceRigDebug());
+  const beforeHipsQuat = beforeRotateDebug.mapped?.Hips?.current_world_quaternion || [];
+  const afterHipsQuat = afterRotateDebug.mapped?.Hips?.current_world_quaternion || [];
+  const hipsQuatDelta = quaternionDelta(beforeHipsQuat, afterHipsQuat);
+  record("hip rotation drives imported source rig", hipsQuatDelta > 0.01, {
+    beforeHipsQuat,
+    afterHipsQuat,
+    hipsQuatDelta,
+  });
   await clickAndExpect("#applyWalkButton", "apply_motion_template", (state) => state.keyframes === 8);
 }
 
@@ -212,6 +225,14 @@ function record(label, pass, details = null) {
   if (!pass) {
     failures.push({ label, details });
   }
+}
+
+function quaternionDelta(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== 4 || b.length !== 4) {
+    return 0;
+  }
+  const dot = Math.abs(a.reduce((sum, value, index) => sum + Number(value) * Number(b[index]), 0));
+  return 1 - Math.min(1, dot);
 }
 
 function timestamp() {
