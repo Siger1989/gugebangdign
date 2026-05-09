@@ -3621,7 +3621,12 @@ function renderTransformGizmo() {
   ];
   axes.forEach((axis) => {
     if (mode === "rotate") {
-      gizmoGroup.add(createGizmoRing(position, axis.vector, size * 0.88, axis.color));
+      const activeAxis = Runtime.transformMode === "rotate" && MotionState.transform.axis === axis.key;
+      gizmoGroup.add(createGizmoRing(position, axis.vector, size * 0.88, axis.color, activeAxis ? 0.98 : 0.82, activeAxis ? 0.0022 : 0.0016, {
+        mode: "rotate",
+        axis_key: axis.key,
+        control_id: control.id,
+      }));
       gizmoGroup.add(makeLabel(axis.label, position.clone().addScaledVector(axis.vector.clone().normalize(), size * 1.05).toArray(), `#${axis.color.toString(16).padStart(6, "0")}`, 0.032, 0.82));
     } else if (mode === "scale") {
       gizmoGroup.add(createGizmoScaleAxis(position, axis.vector, size, axis.color));
@@ -3633,8 +3638,17 @@ function renderTransformGizmo() {
   });
   if (mode === "rotate") {
     const viewAxis = getCameraViewAxis();
-    gizmoGroup.add(createGizmoRing(position, viewAxis, size * 1.18, 0xffffff, 0.84, 0.0018));
-    gizmoGroup.add(createGizmoRing(position, viewAxis, size * 0.55, 0xffffff, 0.58, 0.0012));
+    const viewActive = Runtime.transformMode === "rotate" && !MotionState.transform.axis;
+    gizmoGroup.add(createGizmoRing(position, viewAxis, size * 1.18, 0xffffff, viewActive ? 0.94 : 0.84, viewActive ? 0.0022 : 0.0018, {
+      mode: "rotate",
+      axis_key: "view",
+      control_id: control.id,
+    }));
+    gizmoGroup.add(createGizmoRing(position, viewAxis, size * 0.55, 0xffffff, viewActive ? 0.7 : 0.58, 0.0012, {
+      mode: "rotate",
+      axis_key: "view",
+      control_id: control.id,
+    }));
     renderRotationDragGuide(position, viewAxis);
   }
 }

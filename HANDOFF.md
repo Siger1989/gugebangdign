@@ -1,5 +1,40 @@
 # 动作生成流水线工具交接文档
 
+## 2026-05-09 当前交接：先暂停功能，上传当前状态
+
+当前用户要求先写交接并上传 GitHub，功能修复暂时停止在“旋转 Gizmo 手柄可选中”问题前。
+
+### 当前用户正在反馈的问题
+
+- 选中控制器后按 `R`，界面能显示白色视图旋转圈和 `X/Y/Z` 彩色旋转圈。
+- 但这些旋转圈目前主要还是视觉提示，不能像 Blender 一样直接点击某一个圈作为旋转手柄。
+- 用户期望：
+  - 点击蓝/绿/红旋转圈后，按对应轴旋转当前选中的 Control Rig 控制器。
+  - 点击白色外圈或内圈后，按当前视角轴旋转。
+  - 这些操作最终都必须走 `set_control_transform`，并写入 `command_log`，支持 undo/redo。
+
+### 本地代码状态
+
+- `E:\codex骨骼软件\app.js` 已经有一段未发布的半成品改动：
+  - `renderTransformGizmo()` 给旋转圈传入了 `mode / axis_key / control_id` 这类 pick metadata。
+  - 这段改动本身不会完成拾取，因为 `createGizmoRing()` 仍未创建可 raycast 的粗命中圈。
+  - `onPointerDown()` 仍未优先检测 `gizmoGroup` 的旋转圈命中。
+- 因此下一步不应继续叠功能，而应补齐：
+  - `createGizmoRing(..., pickData)` 生成细视觉圈 + 透明粗 hit ring。
+  - `getTransformGizmoPick(event)` 对 `gizmoGroup` 做 raycast。
+  - `onPointerDown()` 在 Transform 模式下优先处理 gizmo ring pick。
+  - ring pick 后设置 `MotionState.transform.axis` 为 `x/y/z` 或 `null(view)`，并从当前鼠标点重新建立本次旋转 baseline，避免点击瞬间抖动。
+
+### 建议下一步验收
+
+1. 选择 `COG_CTRL`。
+2. 按 `R`。
+3. 点击绿色 `Y` 旋转圈并拖动，控制器应绕 Y 轴旋转。
+4. 点击白色视图圈并拖动，控制器应绕当前摄像机视图轴旋转。
+5. 松开左键后，`command_log` 出现成功的 `set_control_transform`。
+6. `Ctrl+Z` 能回退这次旋转。
+7. `npm run validate:import` 增加一条自动化覆盖：通过 debug API 取旋转圈屏幕坐标，模拟点击拖动并确认命令提交。
+
 ## 2026-05-09 最新交接重点
 
 - 页面主流程已整理为中文：`模型 -> 骨架/方向 -> 映射校正 -> 控制器层 -> 动作模板 -> 验证 -> 导出`。

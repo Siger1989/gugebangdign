@@ -1,5 +1,40 @@
 # CURRENT_STATE
 
+## Handoff Before Gizmo Ring Fix - 2026-05-09
+
+Current objective:
+- Pause feature work, write a clear handoff, and upload the current local state to GitHub before continuing.
+
+Current user-reported issue:
+- After selecting a Control Rig controller and pressing `R`, the visible rotation rings cannot be selected or dragged as Blender-style rotation handles.
+- Expected behavior: colored X/Y/Z rings constrain rotation by axis, white rings rotate around the current view axis, and commits go through `set_control_transform` with undo/redo support.
+
+Current progress:
+- Updated `HANDOFF.md` with the latest issue, current code state, and next implementation plan.
+- Local `app.js` already contains a small in-progress change in `renderTransformGizmo()` that passes `mode / axis_key / control_id` metadata into rotation ring creation.
+- That in-progress change is not enough to fix the issue because `createGizmoRing()` still needs an invisible thick hit ring and `onPointerDown()` still needs to raycast `gizmoGroup` before ordinary control picking.
+
+Files changed:
+- `HANDOFF.md`
+- `CURRENT_STATE.md`
+- `app.js` has pre-existing local changes versus the GitHub publish folder and should be included in the upload so the handoff matches the code state.
+
+Validation result:
+- PASS.
+
+Validation details:
+- `node --check app.js`: PASS.
+- `node --check scripts\validate_demo_import.mjs`: PASS.
+- `npm run validate:import`: PASS.
+- Latest screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_101212Z.png`
+- Publish-folder validation screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_101842Z.png`
+
+Next step:
+- Sync the current local files into `E:\codex骨骼软件_github_publish`, run syntax/import validation, commit, and push.
+- After upload, resume by implementing pickable Transform Gizmo rotation rings.
+
 ## Chinese UI And Stage Flow Cleanup - 2026-05-09
 
 Current objective:
