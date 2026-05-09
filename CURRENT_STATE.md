@@ -1,5 +1,42 @@
 # CURRENT_STATE
 
+## Blender-Style Control Rig Usability Pass - 2026-05-09
+
+Current objective:
+- Fix the animator-facing control workflow: Blender-like R/G behavior, working torso controls, lighter controller visuals, adjustable controller size/thickness, and usable Walk_8F generation.
+
+Current progress:
+- `R` keyboard transform now defaults to rotating around the current camera/view axis, instead of forcing a horizontal/yaw axis. `X/Y/Z` still constrain rotation when pressed during transform.
+- `COG_CTRL`, `Root_CTRL`, and `Global_CTRL` rotations now drive the Hips branch, so the waist/root controls can actually twist the body.
+- `G` translation previews now preserve hand/foot IK target positions instead of snapping the controller back to the clamped end-effector position after solving.
+- Control Rig visuals were simplified from debug boxes/cones into lighter rings, line segments, triangles, and a few translucent panels.
+- Labels are off by default and only render for the selected or hovered control.
+- Added viewport sliders for controller size and controller line thickness.
+- IK Pole defaults now place knees in front of the character and elbows behind the character.
+- `apply_motion_template` no longer fails just because character forward was not manually confirmed; it uses the current forward and marks it confirmed when applying Walk_8F.
+- Validation coverage now checks COG rotation via `set_control_transform`, controller size/thickness commands, and auto-confirmed Walk_8F generation on the imported sample GLB.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+- `HANDOFF.md`
+- `CURRENT_STATE.md`
+
+Validation result: PASS
+
+Validation details:
+- `node --check app.js`: PASS.
+- `node --check scripts\validate_demo_import.mjs`: PASS.
+- `npm run validate:import`: PASS.
+- Latest screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_075300Z.png`
+
+Next step:
+- Hard refresh `http://localhost:8780/`.
+- Test manual interaction on the imported GLB: select `COG_CTRL`, press `R`, move the mouse around the current view angle, then left-click/Enter to confirm; select a hand/foot IK and press `G` to verify the control target moves consistently.
+
 ## Control Rig Layer Refactor - 2026-05-09
 
 Current objective:

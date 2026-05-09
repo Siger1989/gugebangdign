@@ -53,6 +53,14 @@ try {
     space: "global",
     position: [0.03, 1.18, 0],
   }, (state) => state.selected_control === "COG_CTRL");
+  await executeCommandAndExpect("set_control_transform", {
+    control_id: "COG_CTRL",
+    transform_mode: "rotate",
+    space: "global",
+    rotation: [0.18, 0.12, 0.08],
+  }, (state) => state.selected_control === "COG_CTRL" && state.joint_rotation_overrides >= 1);
+  await executeCommandAndExpect("set_control_visual_size", { size: 1.12 }, (state) => Math.abs(state.control_size - 1.12) < 0.001);
+  await executeCommandAndExpect("set_control_visual_thickness", { thickness: 1.18 }, (state) => Math.abs(state.control_thickness - 1.18) < 0.001);
   await clickAndExpect("#applyWalkButton", "apply_motion_template", (state) => state.keyframes === 8);
 
   await ensureDom("timeline keyframes", async () => {
@@ -115,6 +123,8 @@ try {
     "create_humanoid_skeleton",
     "create_ik_controls",
     "set_control_transform",
+    "set_control_visual_size",
+    "set_control_visual_thickness",
     "apply_motion_template",
     "play",
     "validate_motion",
@@ -208,7 +218,6 @@ async function importSampleGlbAndValidateToeFallback() {
     fallbackJoints,
   });
 
-  await executeCommandAndExpect("set_character_direction", { forward_sign: 1, yaw_degrees: 0, confirmed: true }, (state) => state.direction?.confirmed === true);
   await clickAndExpect("#createIkButton", "create_ik_controls", (state) => (
     state.ik_controls === 14
     && state.joint_controls === 19
@@ -229,7 +238,7 @@ async function importSampleGlbAndValidateToeFallback() {
     afterHipsQuat,
     hipsQuatDelta,
   });
-  await clickAndExpect("#applyWalkButton", "apply_motion_template", (state) => state.keyframes === 8);
+  await clickAndExpect("#applyWalkButton", "apply_motion_template", (state) => state.keyframes === 8 && state.direction?.confirmed === true);
 }
 
 async function ensureDom(label, fn) {

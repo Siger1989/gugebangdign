@@ -162,8 +162,8 @@ const CORE_IK_CONTROL_DEFS = [
   { id: "L_Hand_IK", type: "hand", joint: "L_Hand", side: "L" },
   { id: "R_Knee_Pole", type: "pole", joint: "R_LowerLeg", side: "R", offset: [0, 0.08, 0.42], pole_forward_sign: 1 },
   { id: "L_Knee_Pole", type: "pole", joint: "L_LowerLeg", side: "L", offset: [0, 0.08, 0.42], pole_forward_sign: 1 },
-  { id: "R_Elbow_Pole", type: "pole", joint: "R_Forearm", side: "R", offset: [0.08, 0.05, 0.38], pole_forward_sign: 1 },
-  { id: "L_Elbow_Pole", type: "pole", joint: "L_Forearm", side: "L", offset: [-0.08, 0.05, 0.38], pole_forward_sign: 1 },
+  { id: "R_Elbow_Pole", type: "pole", joint: "R_Forearm", side: "R", offset: [0.08, 0.05, -0.34], pole_forward_sign: -1 },
+  { id: "L_Elbow_Pole", type: "pole", joint: "L_Forearm", side: "L", offset: [-0.08, 0.05, -0.34], pole_forward_sign: -1 },
 ];
 const JOINT_CONTROL_DEFS = HUMANOID_JOINT_NAMES.map((joint) => ({
   id: `${joint}_CTRL`,
@@ -231,6 +231,8 @@ const COMMAND_SCHEMAS = {
   set_stage: { type: "object", properties: { stage: { enum: ["model", "skeleton", "mapping", "control_rig", "ik", "motion", "validate", "export"] } } },
   set_current_frame: { type: "object", properties: { frame: { type: "number" } } },
   set_view_option: { type: "object", properties: { key: { type: "string" }, value: { type: "boolean" } } },
+  set_control_visual_size: { type: "object", properties: { size: { type: "number" } } },
+  set_control_visual_thickness: { type: "object", properties: { thickness: { type: "number" } } },
   reset_view: { type: "object", properties: {} },
 };
 
@@ -271,6 +273,8 @@ const MotionState = {
   visual_opacity: {
     skeleton: 0.28,
     controls: 0.32,
+    control_size: 0.82,
+    control_thickness: 0.72,
   },
   show: {
     model: true,
@@ -278,7 +282,7 @@ const MotionState = {
     control_rig: true,
     ik_controls: true,
     joint_debug_controls: false,
-    labels: true,
+    labels: false,
     transform_gizmo: true,
     skeleton_labels: false,
     bone_colors: true,
@@ -363,6 +367,10 @@ const el = {
   skeletonOpacityValue: document.querySelector("#skeletonOpacityValue"),
   controlOpacityInput: document.querySelector("#controlOpacityInput"),
   controlOpacityValue: document.querySelector("#controlOpacityValue"),
+  controlSizeInput: document.querySelector("#controlSizeInput"),
+  controlSizeValue: document.querySelector("#controlSizeValue"),
+  controlThicknessInput: document.querySelector("#controlThicknessInput"),
+  controlThicknessValue: document.querySelector("#controlThicknessValue"),
   timelinePlayButton: document.querySelector("#timelinePlayButton"),
   timelineStopButton: document.querySelector("#timelineStopButton"),
   timelineSaveFrameButton: document.querySelector("#timelineSaveFrameButton"),
@@ -590,6 +598,12 @@ function bindUi() {
   });
   el.controlOpacityInput.addEventListener("input", () => {
     executeCommand(createCommand("set_control_opacity", { opacity: Number(el.controlOpacityInput.value) }));
+  });
+  el.controlSizeInput?.addEventListener("input", () => {
+    executeCommand(createCommand("set_control_visual_size", { size: Number(el.controlSizeInput.value) }));
+  });
+  el.controlThicknessInput?.addEventListener("input", () => {
+    executeCommand(createCommand("set_control_visual_thickness", { thickness: Number(el.controlThicknessInput.value) }));
   });
 
   [
@@ -967,7 +981,14 @@ const COMMAND_EXECUTORS = {
 
   apply_motion_template: async ({ template_id }) => {
     ensureHumanoidSkeletonForAnimation();
-    requireCharacterDirectionConfirmed();
+    const autoConfirmedDirection = !MotionState.direction?.confirmed;
+    if (autoConfirmedDirection) {
+      MotionState.direction = {
+        forward_sign: MotionState.direction?.forward_sign === -1 ? -1 : 1,
+        yaw_degrees: normalizeForwardYaw(MotionState.direction?.yaw_degrees || 0),
+        confirmed: true,
+      };
+    }
     if (template_id !== "walk_cycle_8f") {
       throw new Error("第一阶段的动作模板只支持 walk_cycle_8f");
     }
@@ -980,7 +1001,12 @@ const COMMAND_EXECUTORS = {
     MotionState.validation_report = createEmptyValidationReport();
     MotionState.dirty_state = true;
     Runtime.stage = "motion";
-    return { message: "已创建 8 个关键姿势", template_id: "walk_cycle_8f", keyframes: MotionState.keyframes.length };
+    return {
+      message: autoConfirmedDirection ? "已使用当前前方并创建 8 个走路关键姿势" : "已创建 8 个走路关键姿势",
+      template_id: "walk_cycle_8f",
+      keyframes: MotionState.keyframes.length,
+      auto_confirmed_direction: autoConfirmedDirection,
+    };
   },
 
   set_ik_target: async ({ control_id, position }) => {
@@ -1201,7 +1227,13 @@ const COMMAND_EXECUTORS = {
     MotionState.keyframes = data.keyframes || [];
     MotionState.motion_templates = data.motion_templates || MotionState.motion_templates;
     MotionState.validation_report = data.validation_report || createEmptyValidationReport();
-    MotionState.visual_opacity = data.visual_opacity || MotionState.visual_opacity;
+    MotionState.visual_opacity = {
+      skeleton: 0.28,
+      controls: 0.32,
+      control_size: 0.82,
+      control_thickness: 0.72,
+      ...(data.visual_opacity || {}),
+    };
     MotionState.selected_bone = MotionState.bones[0]?.name || null;
     MotionState.selected_source_bone_id = MotionState.source_bones[0]?.id || null;
     MotionState.selected_control = MotionState.ik_controls[0]?.id || null;
@@ -1343,6 +1375,16 @@ const COMMAND_EXECUTORS = {
     }
     MotionState.show[key] = Boolean(value);
     return { message: `${translateViewOption(key)} 已${MotionState.show[key] ? "开启" : "关闭"}` };
+  },
+
+  set_control_visual_size: async ({ size }) => {
+    MotionState.visual_opacity.control_size = clampNumber(size, 0.35, 1.6, 0.82);
+    return { message: `控制器大小 ${MotionState.visual_opacity.control_size.toFixed(2)}` };
+  },
+
+  set_control_visual_thickness: async ({ thickness }) => {
+    MotionState.visual_opacity.control_thickness = clampNumber(thickness, 0.35, 1.8, 0.72);
+    return { message: `控制器线粗 ${MotionState.visual_opacity.control_thickness.toFixed(2)}` };
   },
 
   reset_view: async () => {
@@ -2569,6 +2611,12 @@ function applyControlToJoint(control, previousControl = null) {
     const previousPosition = previousControl?.position || getControlPositionForDef(getControlDef(control.id), joint);
     const delta = subtractVec(control.position, previousPosition);
     translateSkeletonBy(delta);
+    const previousRotation = getControlRotationQuaternion(previousControl || { rotation: [0, 0, 0] });
+    const nextRotation = getControlRotationQuaternion(control);
+    const deltaRotation = nextRotation.clone().multiply(previousRotation.clone().invert()).normalize();
+    if (!isIdentityQuaternion(deltaRotation)) {
+      rotateJointBranchByQuaternion("Hips", deltaRotation);
+    }
     if (control.allow_scale && previousControl && control.scale) {
       const scaleFactor = getControlScaleFactor(control, previousControl);
       if (Math.abs(scaleFactor - 1) > 0.0001) {
@@ -2783,7 +2831,7 @@ function syncIkControlsToJoints(controls) {
     if (!def || !joint) {
       return control;
     }
-    if (control.type === "pole") {
+    if (["hand", "foot", "pole"].includes(control.type)) {
       return {
         ...control,
         rotation: control.rotation || [0, 0, 0],
@@ -3241,10 +3289,10 @@ function shouldPickIkControl(control) {
 }
 
 function shouldRenderIkControlLabel(control) {
-  return MotionState.show.labels && (!control.is_joint_control
-    || MotionState.selected_control === control.id
+  return MotionState.show.labels && (
+    MotionState.selected_control === control.id
     || Runtime.hoveredControlId === control.id
-    || MotionState.show.joint_debug_controls);
+  );
 }
 
 function getIkControlLabel(control) {
@@ -3274,150 +3322,205 @@ function alignGroupToRigBasis(group) {
 function createControlMesh(control, color) {
   const group = new THREE.Group();
   group.userData = { type: "ik_control", control_id: control.id, name: control.id };
-  const controlColor = new THREE.Color(color);
   const controlOpacity = MotionState.visual_opacity.controls;
   const selected = MotionState.selected_control === control.id;
   const hovered = Runtime.hoveredControlId === control.id;
   const visualBoost = selected ? 0.28 : hovered ? 0.18 : 0;
-  const solid = new THREE.MeshBasicMaterial({
+  const lineMaterial = new THREE.MeshBasicMaterial({
     color: new THREE.Color(selected ? "#ffffff" : color),
     transparent: true,
-    opacity: Math.min(0.42, controlOpacity * 0.42 + visualBoost),
-    depthTest: true,
+    opacity: Math.min(0.98, controlOpacity + 0.34 + visualBoost),
+    depthTest: false,
     side: THREE.DoubleSide,
   });
-  const wire = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(selected ? "#ffffff" : color),
+  const panelMaterial = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(color),
     transparent: true,
-    opacity: Math.min(0.96, controlOpacity + 0.2 + visualBoost),
-    wireframe: true,
-    depthTest: true,
+    opacity: Math.min(0.2, controlOpacity * 0.28 + (selected || hovered ? 0.05 : 0)),
+    depthTest: false,
+    side: THREE.DoubleSide,
   });
+  const tube = getControlLineRadius(selected, hovered);
   if (control.type === "joint") {
     const size = selected || hovered ? 0.045 : 0.026;
-    const cube = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), solid);
-    const outline = new THREE.Mesh(new THREE.BoxGeometry(size * 1.28, size * 1.28, size * 1.28), wire);
-    cube.userData = group.userData;
-    outline.userData = group.userData;
-    group.add(cube, outline);
+    addControlSegment(group, new THREE.Vector3(-size, 0, 0), new THREE.Vector3(size, 0, 0), tube, lineMaterial);
+    addControlSegment(group, new THREE.Vector3(0, -size, 0), new THREE.Vector3(0, size, 0), tube, lineMaterial);
+    addControlSegment(group, new THREE.Vector3(0, 0, -size), new THREE.Vector3(0, 0, size), tube, lineMaterial);
     addControlHitArea(group, selected || hovered ? 0.075 : 0.052);
     return group;
   }
   alignGroupToRigBasis(group);
   const controlScale = normalizeVec3(control.scale || [1, 1, 1], [1, 1, 1], 0.05, 20);
-  group.scale.set(controlScale[0], controlScale[1], controlScale[2]);
+  const visualSize = getControlVisualSize();
+  group.scale.set(controlScale[0] * visualSize, controlScale[1] * visualSize, controlScale[2] * visualSize);
   if (control.type === "global") {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.008, 8, 96), wire);
-    ring.rotation.x = Math.PI / 2;
-    const crossA = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.006, 0.006), wire.clone());
-    const crossB = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.006, 0.74), wire.clone());
-    ring.userData = group.userData;
-    crossA.userData = group.userData;
-    crossB.userData = group.userData;
-    group.add(ring, crossA, crossB);
+    addControlCircle(group, 0.42, "xz", tube, lineMaterial, 96);
+    addControlSegment(group, new THREE.Vector3(-0.36, 0, 0), new THREE.Vector3(0.36, 0, 0), tube, lineMaterial);
+    addControlSegment(group, new THREE.Vector3(0, 0, -0.36), new THREE.Vector3(0, 0, 0.36), tube, lineMaterial);
     addControlHitArea(group, 0.46);
     return group;
   }
   if (control.type === "root") {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.006, 8, 64), wire);
-    ring.rotation.x = Math.PI / 2;
-    const box = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.012, 0.18), wire.clone());
-    ring.userData = group.userData;
-    box.userData = group.userData;
-    group.add(ring, box);
+    addControlCircle(group, 0.17, "xz", tube, lineMaterial, 64);
+    addControlRect(group, 0.24, 0.18, "xz", tube, lineMaterial);
     addControlHitArea(group, 0.23);
     return group;
   }
   if (control.type === "cog") {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.008, 8, 72), wire);
-    ring.rotation.y = Math.PI / 2;
-    const ringSide = new THREE.Mesh(new THREE.TorusGeometry(0.135, 0.005, 8, 48), wire.clone());
-    ringSide.rotation.x = Math.PI / 2;
-    const core = new THREE.Mesh(new THREE.SphereGeometry(0.035, 16, 10), solid.clone());
-    ring.userData = group.userData;
-    ringSide.userData = group.userData;
-    core.userData = group.userData;
-    group.add(ring, ringSide, core);
+    addControlCircle(group, 0.17, "xz", tube, lineMaterial, 72);
+    addControlCircle(group, 0.14, "yz", tube, lineMaterial, 56);
+    addControlSegment(group, new THREE.Vector3(0, -0.11, 0), new THREE.Vector3(0, 0.11, 0), tube, lineMaterial);
     addControlHitArea(group, 0.22);
     return group;
   }
   if (control.type === "pelvis") {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.007, 8, 56), wire);
-    ring.rotation.x = Math.PI / 2;
-    const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.112, 0.112, 0.018, 42, 1, true), wire.clone());
-    const core = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.038, 0.055), solid.clone());
-    ring.userData = group.userData;
-    belt.userData = group.userData;
-    core.userData = group.userData;
-    group.add(ring, belt, core);
+    addControlCircle(group, 0.15, "xz", tube, lineMaterial, 56);
+    addControlSegment(group, new THREE.Vector3(-0.13, 0, 0), new THREE.Vector3(0.13, 0, 0), tube, lineMaterial);
     addControlHitArea(group, 0.19);
     return group;
   }
   if (control.type === "chest") {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.006, 8, 64), wire);
-    ring.rotation.y = Math.PI / 2;
-    const lean = new THREE.Mesh(new THREE.TorusGeometry(0.108, 0.004, 8, 44), wire.clone());
-    lean.rotation.x = Math.PI / 2;
-    ring.userData = group.userData;
-    lean.userData = group.userData;
-    group.add(ring, lean);
+    addControlCircle(group, 0.16, "yz", tube, lineMaterial, 64);
+    addControlSegment(group, new THREE.Vector3(-0.12, 0, 0), new THREE.Vector3(0.12, 0, 0), tube, lineMaterial);
     addControlHitArea(group, 0.2);
     return group;
   }
   if (control.type === "head") {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.105, 0.005, 8, 48), wire);
-    ring.rotation.y = Math.PI / 2;
-    const aim = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.065, 16), solid.clone());
-    aim.rotation.x = Math.PI / 2;
-    aim.position.z = 0.08;
-    ring.userData = group.userData;
-    aim.userData = group.userData;
-    group.add(ring, aim);
+    addControlCircle(group, 0.105, "yz", tube, lineMaterial, 48);
+    addControlSegment(group, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0.14), tube, lineMaterial);
     addControlHitArea(group, 0.15);
     return group;
   }
   if (control.type === "foot") {
-    const sole = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.012, 0.105), solid);
-    const outline = new THREE.Mesh(new THREE.BoxGeometry(0.184, 0.014, 0.118), wire);
-    const toe = new THREE.Mesh(new THREE.ConeGeometry(0.052, 0.08, 16), solid.clone());
-    toe.rotation.x = Math.PI / 2;
-    toe.position.z = 0.082;
-    const heel = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.01, 20), wire.clone());
-    heel.position.z = -0.063;
-    sole.userData = group.userData;
-    outline.userData = group.userData;
-    toe.userData = group.userData;
-    heel.userData = group.userData;
-    group.add(sole, outline, toe, heel);
+    addControlPanel(group, 0.18, 0.12, "xz", panelMaterial);
+    addControlRect(group, 0.2, 0.13, "xz", tube, lineMaterial);
+    addControlSegment(group, new THREE.Vector3(0, 0, 0.06), new THREE.Vector3(0, 0, 0.15), tube, lineMaterial);
+    addControlTriangle(group, 0.07, "xz", tube, lineMaterial, new THREE.Vector3(0, 0, 0.16));
     addControlHitArea(group, 0.16);
     return group;
   }
   if (control.type === "hand") {
-    const palm = new THREE.Mesh(new THREE.BoxGeometry(0.082, 0.054, 0.07), solid.clone());
-    const outline = new THREE.Mesh(new THREE.BoxGeometry(0.096, 0.066, 0.082), wire);
-    const wrist = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.07, 12), wire.clone());
-    wrist.rotation.z = Math.PI / 2;
-    wrist.position.x = control.side === "R" ? -0.065 : 0.065;
-    palm.userData = group.userData;
-    outline.userData = group.userData;
-    wrist.userData = group.userData;
-    group.add(palm, outline, wrist);
+    addControlPanel(group, 0.09, 0.07, "xy", panelMaterial);
+    addControlRect(group, 0.105, 0.08, "xy", tube, lineMaterial);
+    const wristSign = control.side === "R" ? -1 : 1;
+    addControlSegment(group, new THREE.Vector3(wristSign * 0.045, 0, 0), new THREE.Vector3(wristSign * 0.105, 0, 0), tube, lineMaterial);
     addControlHitArea(group, 0.15);
     return group;
   }
-  const triangle = new THREE.Mesh(new THREE.ConeGeometry(0.052, 0.095, 3), wire);
-  triangle.rotation.x = Math.PI / 2;
-  const fill = new THREE.Mesh(new THREE.ConeGeometry(0.036, 0.066, 3), solid.clone());
-  fill.rotation.x = Math.PI / 2;
-  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.105, 8), wire.clone());
-  stem.rotation.x = Math.PI / 2;
-  stem.position.z = -0.08;
-  triangle.userData = group.userData;
-  fill.userData = group.userData;
-  stem.userData = group.userData;
-  group.add(triangle, fill, stem);
+  addControlTriangle(group, 0.11, "xy", tube, lineMaterial);
+  addControlPanel(group, 0.08, 0.07, "xy", panelMaterial);
+  addControlSegment(group, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -0.1), tube, lineMaterial);
   addControlHitArea(group, 0.16);
   return group;
+}
+
+function getControlVisualSize() {
+  return clampNumber(MotionState.visual_opacity.control_size, 0.35, 1.6, 0.82);
+}
+
+function getControlLineRadius(selected = false, hovered = false) {
+  const thickness = clampNumber(MotionState.visual_opacity.control_thickness, 0.35, 1.8, 0.72);
+  return (selected ? 0.007 : hovered ? 0.006 : 0.0046) * thickness;
+}
+
+function tagControlObject(group, object) {
+  object.userData = group.userData;
+  object.renderOrder = 26;
+  return object;
+}
+
+function addControlCircle(group, radius, plane, tube, material, segments = 56) {
+  const ring = tagControlObject(group, new THREE.Mesh(
+    new THREE.TorusGeometry(radius, tube, 6, segments),
+    material.clone(),
+  ));
+  if (plane === "xz") {
+    ring.rotation.x = Math.PI / 2;
+  } else if (plane === "yz") {
+    ring.rotation.y = Math.PI / 2;
+  }
+  group.add(ring);
+  return ring;
+}
+
+function addControlRect(group, width, height, plane, tube, material) {
+  const points = getPlaneRectPoints(width, height, plane);
+  for (let index = 0; index < points.length; index += 1) {
+    addControlSegment(group, points[index], points[(index + 1) % points.length], tube, material);
+  }
+}
+
+function addControlTriangle(group, size, plane, tube, material, offset = new THREE.Vector3()) {
+  const half = size * 0.5;
+  const points = plane === "xz"
+    ? [
+        new THREE.Vector3(0, 0, half),
+        new THREE.Vector3(-half, 0, -half),
+        new THREE.Vector3(half, 0, -half),
+      ]
+    : [
+        new THREE.Vector3(0, half, 0),
+        new THREE.Vector3(-half, -half, 0),
+        new THREE.Vector3(half, -half, 0),
+      ];
+  const translated = points.map((point) => point.clone().add(offset));
+  for (let index = 0; index < translated.length; index += 1) {
+    addControlSegment(group, translated[index], translated[(index + 1) % translated.length], tube, material);
+  }
+}
+
+function addControlPanel(group, width, height, plane, material) {
+  const panel = tagControlObject(group, new THREE.Mesh(new THREE.PlaneGeometry(width, height), material.clone()));
+  if (plane === "xz") {
+    panel.rotation.x = -Math.PI / 2;
+  } else if (plane === "yz") {
+    panel.rotation.y = Math.PI / 2;
+  }
+  group.add(panel);
+  return panel;
+}
+
+function addControlSegment(group, start, end, radius, material) {
+  const delta = end.clone().sub(start);
+  const length = delta.length();
+  if (length < 0.0001) {
+    return null;
+  }
+  const segment = tagControlObject(group, new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius, length, 6),
+    material.clone(),
+  ));
+  segment.position.copy(start).add(end).multiplyScalar(0.5);
+  segment.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
+  group.add(segment);
+  return segment;
+}
+
+function getPlaneRectPoints(width, height, plane) {
+  const halfW = width * 0.5;
+  const halfH = height * 0.5;
+  if (plane === "xz") {
+    return [
+      new THREE.Vector3(-halfW, 0, -halfH),
+      new THREE.Vector3(halfW, 0, -halfH),
+      new THREE.Vector3(halfW, 0, halfH),
+      new THREE.Vector3(-halfW, 0, halfH),
+    ];
+  }
+  if (plane === "yz") {
+    return [
+      new THREE.Vector3(0, -halfW, -halfH),
+      new THREE.Vector3(0, halfW, -halfH),
+      new THREE.Vector3(0, halfW, halfH),
+      new THREE.Vector3(0, -halfW, halfH),
+    ];
+  }
+  return [
+    new THREE.Vector3(-halfW, -halfH, 0),
+    new THREE.Vector3(halfW, -halfH, 0),
+    new THREE.Vector3(halfW, halfH, 0),
+    new THREE.Vector3(-halfW, halfH, 0),
+  ];
 }
 
 function addControlHitArea(group, radius) {
@@ -3596,6 +3699,14 @@ function renderUi() {
   el.skeletonOpacityValue.textContent = MotionState.visual_opacity.skeleton.toFixed(2);
   el.controlOpacityInput.value = String(MotionState.visual_opacity.controls);
   el.controlOpacityValue.textContent = MotionState.visual_opacity.controls.toFixed(2);
+  if (el.controlSizeInput && el.controlSizeValue) {
+    el.controlSizeInput.value = String(MotionState.visual_opacity.control_size ?? 0.82);
+    el.controlSizeValue.textContent = (MotionState.visual_opacity.control_size ?? 0.82).toFixed(2);
+  }
+  if (el.controlThicknessInput && el.controlThicknessValue) {
+    el.controlThicknessInput.value = String(MotionState.visual_opacity.control_thickness ?? 0.72);
+    el.controlThicknessValue.textContent = (MotionState.visual_opacity.control_thickness ?? 0.72).toFixed(2);
+  }
   el.characterForwardValue.textContent = formatCharacterForwardState();
   if (el.forwardAngleInput && el.forwardAngleValue) {
     const yaw = normalizeForwardYaw(MotionState.direction?.yaw_degrees || 0);
@@ -4900,12 +5011,14 @@ function startKeyboardTransform(mode) {
     return;
   }
   Runtime.transformMode = mode;
+  const screenCenter = getWorldScreenPosition(control.position);
   Runtime.transformSubject = {
     control_id: control.id,
     joint: control.target_joint,
     start_position: [...control.position],
     start_rotation: [...(control.rotation || [0, 0, 0])],
     start_scale: [...(control.scale || [1, 1, 1])],
+    start_screen: screenCenter ? { x: screenCenter.x, y: screenCenter.y } : null,
   };
   Runtime.transformStartSnapshot = snapshotCoreState();
   Runtime.transformStartPointer = { ...Runtime.lastPointer };
@@ -4938,11 +5051,7 @@ function updateKeyboardTransform(event) {
     applyIkTargetPreview(subject.control_id, next);
     Runtime.transformFinalValue = { position: next };
   } else if (Runtime.transformMode === "rotate") {
-    const angle = dx * 0.012;
-    const axisName = MotionState.transform.axis || "y";
-    const nextRotation = [...subject.start_rotation];
-    const axisIndex = { x: 0, y: 1, z: 2 }[axisName] ?? 1;
-    nextRotation[axisIndex] += angle;
+    const nextRotation = getKeyboardTransformRotation(subject, event, dx, dy);
     const control = MotionState.ik_controls.find((item) => item.id === subject.control_id);
     if (control) {
       const previousControl = deepClone(control);
@@ -4964,6 +5073,81 @@ function updateKeyboardTransform(event) {
     Runtime.transformFinalValue = { scale: nextScale };
   }
   renderAll();
+}
+
+function getKeyboardTransformRotation(subject, event, dx, dy) {
+  const startRotation = normalizeVec3(subject.start_rotation, [0, 0, 0]);
+  const startQuaternion = getControlRotationQuaternion({ rotation: startRotation });
+  const axisName = MotionState.transform.axis;
+  const axis = axisName
+    ? getTransformAxisVector(axisName, subject.control_id)
+    : getCameraViewAxis();
+  const angle = axisName
+    ? getConstrainedRotationAngle(axis, dx, dy)
+    : getViewPlaneRotationAngle(subject, event, dx, dy);
+  const deltaQuaternion = new THREE.Quaternion().setFromAxisAngle(axis.clone().normalize(), angle);
+  const nextQuaternion = deltaQuaternion.multiply(startQuaternion).normalize();
+  const nextEuler = new THREE.Euler().setFromQuaternion(nextQuaternion, "XYZ");
+  return [nextEuler.x, nextEuler.y, nextEuler.z];
+}
+
+function getCameraViewAxis() {
+  const axis = new THREE.Vector3();
+  camera.getWorldDirection(axis);
+  return axis.length() > 0.001 ? axis.normalize() : getRigBasis().forward.clone().normalize();
+}
+
+function getConstrainedRotationAngle(axis, dx, dy) {
+  const screenAxis = getProjectedAxisScreenVector(axis);
+  if (screenAxis.length() > 0.001) {
+    const pointer = new THREE.Vector2(dx, dy);
+    return pointer.dot(screenAxis.normalize()) * 0.012;
+  }
+  return (Math.abs(dx) >= Math.abs(dy) ? dx : -dy) * 0.012;
+}
+
+function getViewPlaneRotationAngle(subject, event, dx, dy) {
+  const center = subject.start_screen || getWorldScreenPosition(subject.start_position);
+  if (center) {
+    const startPointer = Runtime.transformStartPointer || { x: event.clientX - dx, y: event.clientY - dy };
+    const startVector = new THREE.Vector2(startPointer.x - center.x, startPointer.y - center.y);
+    const currentVector = new THREE.Vector2(event.clientX - center.x, event.clientY - center.y);
+    if (startVector.length() > 8 && currentVector.length() > 8) {
+      startVector.normalize();
+      currentVector.normalize();
+      const cross = startVector.x * currentVector.y - startVector.y * currentVector.x;
+      const dot = THREE.MathUtils.clamp(startVector.dot(currentVector), -1, 1);
+      return -Math.atan2(cross, dot);
+    }
+  }
+  return (dx - dy) * 0.008;
+}
+
+function getProjectedAxisScreenVector(axis) {
+  const origin = getSelectedTransformControl()?.position || [0, 0, 0];
+  const originWorld = new THREE.Vector3().fromArray(origin);
+  const axisWorld = originWorld.clone().add(axis.clone().normalize().multiplyScalar(Math.max(0.35, cameraDistance * 0.12)));
+  const originScreen = getWorldScreenPosition(originWorld.toArray());
+  const axisScreen = getWorldScreenPosition(axisWorld.toArray());
+  if (!originScreen || !axisScreen) {
+    return new THREE.Vector2();
+  }
+  return new THREE.Vector2(axisScreen.x - originScreen.x, axisScreen.y - originScreen.y);
+}
+
+function getWorldScreenPosition(position) {
+  if (!Array.isArray(position) || position.length !== 3) {
+    return null;
+  }
+  const rect = canvas.getBoundingClientRect();
+  const projected = new THREE.Vector3().fromArray(position).project(camera);
+  if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y)) {
+    return null;
+  }
+  return new THREE.Vector2(
+    rect.left + ((projected.x + 1) * 0.5 * rect.width),
+    rect.top + ((1 - projected.y) * 0.5 * rect.height),
+  );
 }
 
 function finishKeyboardTransform() {
@@ -5027,10 +5211,7 @@ function getTransformAxisVector(axisName, controlId) {
 }
 
 function getPointerAxisAmount(axis, dx, dy) {
-  const origin = new THREE.Vector3();
-  const screenOrigin = origin.clone().project(camera);
-  const screenAxis = axis.clone().normalize().multiplyScalar(0.5).project(camera);
-  const axisScreen = new THREE.Vector2(screenAxis.x - screenOrigin.x, -(screenAxis.y - screenOrigin.y));
+  const axisScreen = getProjectedAxisScreenVector(axis);
   if (axisScreen.length() < 0.0001) {
     return dx * cameraDistance * 0.0012;
   }
@@ -5124,6 +5305,8 @@ function getMotionStateSummary() {
     model_opacity: MotionState.model.opacity,
     skeleton_opacity: MotionState.visual_opacity.skeleton,
     control_opacity: MotionState.visual_opacity.controls,
+    control_size: MotionState.visual_opacity.control_size ?? 0.82,
+    control_thickness: MotionState.visual_opacity.control_thickness ?? 0.72,
   };
 }
 
@@ -5201,6 +5384,10 @@ function clampFrame(frame) {
 }
 
 function clampOpacity(value, min, max, fallback) {
+  return clampNumber(value, min, max, fallback);
+}
+
+function clampNumber(value, min, max, fallback) {
   const number = Number(value);
   return Math.max(min, Math.min(max, Number.isFinite(number) ? number : fallback));
 }

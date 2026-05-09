@@ -274,7 +274,7 @@ button:disabled {
 
 .viewport-opacity-controls label {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 36px;
+  grid-template-columns: 58px minmax(0, 1fr) 36px;
   gap: 6px;
   align-items: center;
   color: #d9e5f5;
