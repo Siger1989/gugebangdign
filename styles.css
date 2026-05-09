@@ -583,6 +583,32 @@ button:disabled {
   white-space: nowrap;
 }
 
+.direction-confirm {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr) 92px 74px;
+  gap: 6px;
+  align-items: center;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.direction-confirm strong {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.direction-confirm button {
+  min-height: 24px;
+  padding: 0 6px;
+  font-size: 10px;
+}
+
 .mapping-workspace {
   display: grid;
   grid-template-columns: 1fr 1fr;

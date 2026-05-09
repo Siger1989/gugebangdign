@@ -1,5 +1,73 @@
 # CURRENT_STATE
 
+## Direction Confirmation And Blender Orbit Fix - 2026-05-09
+
+Current objective:
+- Add a required character-forward confirmation step before applying imported-model walk motion, and fix viewport/control interaction problems reported after binding.
+
+Current progress:
+- Added skeleton-stage direction confirmation:
+  - `确认当前前方`
+  - `前后反转`
+  - status text for confirmed / pending direction
+  - small viewport forward arrow near the rig
+- Added `set_character_direction` into the Command API and MotionState snapshot/undo/export flow.
+- Exported/imported Motion JSON now includes `direction`.
+- Imported GLB rigs must confirm forward direction before `apply_motion_template` can apply `walk_cycle_8f`.
+- Validation now reports `Character forward not confirmed` for imported skeletons that have not confirmed front/back direction.
+- `前后反转` clears existing keyframes so old wrong-direction motion is not reused.
+- Expanded controls:
+  - kept 9 core IK controls
+  - added 19 joint controls so head, torso, limbs, feet, and toes are directly selectable/controllable
+  - status summary now separates core IK, joint controls, and all controls
+- Fixed viewport interaction:
+  - hover highlights controls before selection
+  - click selects first, dragging starts only after a movement threshold
+  - middle-mouse orbit now uses the previous pointer position correctly
+  - orbit keeps camera distance locked
+  - zoom range is widened
+  - selecting a control retargets orbit around that selected point
+
+Files changed:
+- `app.js`
+- `index.html`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `npm run check`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run validate:import`
+- Playwright direction gate validation with `sample_models/stylized_3d_character_model.glb`
+- Playwright middle-mouse orbit validation
+- Playwright forward-flip validation
+
+Validation result: PASS
+
+Validation details:
+- `npm run check`: PASS.
+- `node --check scripts\validate_demo_import.mjs`: PASS.
+- `npm run validate:import`: PASS.
+- Latest generated validation screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_001441Z.png`
+- Imported GLB direction gate:
+  - applying Walk_8F before direction confirmation is blocked with a clear error.
+  - confirming front direction allows Walk_8F and creates 8 keyframes.
+- Orbit validation:
+  - middle-mouse drag changed yaw/pitch.
+  - camera distance delta stayed `0`.
+- Forward flip validation:
+  - `forward_sign` changed from `1` to `-1`.
+  - existing 8 keyframes were cleared.
+
+Current blocking issue:
+- None.
+
+Next step:
+- Manual browser refresh at `http://localhost:8780/index.html`.
+- With the target GLB: import -> map/confirm bones -> confirm or flip character front -> create IK -> apply Walk_8F -> play.
+
 ## Handoff Documentation And GitHub Publish - 2026-05-09
 
 Current objective:

@@ -49,7 +49,7 @@ try {
 
   const beforePlay = await getSummary();
   await clickAndExpect("#playButton", "play", () => true);
-  await page.waitForTimeout(650);
+  await page.waitForTimeout(1200);
   const afterPlay = await getSummary();
   record("playback advances frame", afterPlay.current_frame !== beforePlay.current_frame, { beforePlay, afterPlay });
 
@@ -66,7 +66,14 @@ try {
   const exported = await page.evaluate(() => window.__motionDebug.getExportedJson());
   const exportedJson = JSON.parse(exported);
   record("export contains skeleton", exportedJson.skeleton?.id === "Humanoid_v1", exportedJson.skeleton);
-  record("export contains ik_controls", exportedJson.ik_controls?.length === 9, { count: exportedJson.ik_controls?.length });
+  const coreIkControls = (exportedJson.ik_controls || []).filter((control) => !control.is_joint_control);
+  const jointControls = (exportedJson.ik_controls || []).filter((control) => control.is_joint_control);
+  record("export contains ik_controls", coreIkControls.length === 9 && jointControls.length === 19, {
+    core: coreIkControls.length,
+    joint: jointControls.length,
+    count: exportedJson.ik_controls?.length,
+  });
+  record("export contains direction", typeof exportedJson.direction?.forward_sign === "number", exportedJson.direction);
   record("export contains keyframes", exportedJson.keyframes?.length === 8, { count: exportedJson.keyframes?.length });
   record("export contains validation_report", exportedJson.validation_report?.status === "Passed", exportedJson.validation_report);
 
