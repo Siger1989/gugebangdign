@@ -62,7 +62,7 @@ try {
     rotation: [0.18, 0.12, 0.08],
   }, (state) => state.selected_control === "COG_CTRL" && state.joint_rotation_overrides >= 1);
   await executeCommandAndExpect("set_control_visual_size", { size: 1.12 }, (state) => Math.abs(state.control_size - 1.12) < 0.001);
-  await executeCommandAndExpect("set_control_visual_thickness", { thickness: 1.18 }, (state) => Math.abs(state.control_thickness - 1.18) < 0.001);
+  await executeCommandAndExpect("set_control_visual_thickness", { thickness: 0.52 }, (state) => Math.abs(state.control_thickness - 0.52) < 0.001);
   await clickAndExpect("#applyWalkButton", "apply_motion_template", (state) => state.keyframes === 8);
 
   await ensureDom("timeline keyframes", async () => {
@@ -107,6 +107,12 @@ try {
   ), {
     cog: keyedControls.get("COG_CTRL"),
     pelvis: keyedControls.get("Pelvis_CTRL"),
+  });
+  record("walk template keeps hands on their own sides", walkHandsStayOnOwnSides(exportedJson), {
+    firstFrameHands: {
+      right: keyedControls.get("R_Hand_IK")?.position,
+      left: keyedControls.get("L_Hand_IK")?.position,
+    },
   });
   record("export contains validation_report", exportedJson.validation_report?.status === "Passed", exportedJson.validation_report);
 
@@ -269,6 +275,10 @@ async function importSampleGlbAndValidateToeFallback() {
     hipsQuatDelta,
   });
   await clickAndExpect("#applyWalkButton", "apply_motion_template", (state) => state.keyframes === 8 && state.direction?.confirmed === true);
+  const importedWalkState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  record("sample GLB walk keeps hands on their own sides", walkHandsStayOnOwnSides(importedWalkState), {
+    keyframes: importedWalkState.keyframes?.length,
+  });
 }
 
 async function ensureDom(label, fn) {
@@ -291,6 +301,49 @@ function record(label, pass, details = null) {
   if (!pass) {
     failures.push({ label, details });
   }
+}
+
+function walkHandsStayOnOwnSides(payload) {
+  const frames = payload.keyframes || [];
+  if (frames.length === 0) {
+    return false;
+  }
+  return frames.every((frame) => {
+    const joints = new Map((frame.joints || []).map((joint) => [joint.name, joint.position]));
+    const controls = new Map((frame.ik_controls || []).map((control) => [control.id, control.position]));
+    const rightShoulder = joints.get("R_UpperArm");
+    const leftShoulder = joints.get("L_UpperArm");
+    const rightHandTarget = controls.get("R_Hand_IK") || joints.get("R_Hand");
+    const leftHandTarget = controls.get("L_Hand_IK") || joints.get("L_Hand");
+    if (!rightShoulder || !leftShoulder || !rightHandTarget || !leftHandTarget) {
+      return false;
+    }
+    const center = scaleVec(addPlainVec(rightShoulder, leftShoulder), 0.5);
+    const sideAxis = normalizePlainVec(subPlainVec(rightShoulder, leftShoulder));
+    return dotPlainVec(subPlainVec(rightHandTarget, center), sideAxis) > 0.02
+      && dotPlainVec(subPlainVec(leftHandTarget, center), sideAxis) < -0.02;
+  });
+}
+
+function addPlainVec(a, b) {
+  return [Number(a[0]) + Number(b[0]), Number(a[1]) + Number(b[1]), Number(a[2]) + Number(b[2])];
+}
+
+function subPlainVec(a, b) {
+  return [Number(a[0]) - Number(b[0]), Number(a[1]) - Number(b[1]), Number(a[2]) - Number(b[2])];
+}
+
+function scaleVec(vector, scale) {
+  return vector.map((value) => value * scale);
+}
+
+function dotPlainVec(a, b) {
+  return Number(a[0]) * Number(b[0]) + Number(a[1]) * Number(b[1]) + Number(a[2]) * Number(b[2]);
+}
+
+function normalizePlainVec(vector) {
+  const length = Math.hypot(Number(vector[0]), Number(vector[1]), Number(vector[2]));
+  return length > 0.0001 ? vector.map((value) => Number(value) / length) : [1, 0, 0];
 }
 
 function quaternionDelta(a, b) {

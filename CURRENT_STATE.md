@@ -1,5 +1,42 @@
 # CURRENT_STATE
 
+## Thin Controls, Rotation Direction, And Walk Hand Crossing Fix - 2026-05-09
+
+Current objective:
+- Respond to usability issues where controls/gizmo lines were too thick, mouse rotation felt inverted, and default Walk_8F crossed both arms in front of the body.
+
+Current progress:
+- Reduced default Control Rig line thickness from `0.72` to `0.28`.
+- Reduced the actual generated tube radii for Control Rig lines and Transform Gizmo rings/drag guide, so the result is genuinely thinner rather than only changing the slider value.
+- Reduced translate/world-axis arrow shaft and head size.
+- Reversed view-axis and constrained rotation angle signs so mouse drag direction matches the model's visible rotation direction.
+- Reworked `setWalkHandIkControl`:
+  - hand targets are now derived from each side's shoulder direction, not a generic global left/right offset
+  - right hand stays outside the right shoulder side
+  - left hand stays outside the left shoulder side
+  - fallback side direction still uses the current rig basis
+- Added validation that Walk_8F keeps `R_Hand_IK` and `L_Hand_IK` on their own shoulder sides for both the dummy flow and the imported sample GLB flow.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Validation result: PASS
+
+Validation details:
+- `node --check app.js`: PASS.
+- `node --check scripts\validate_demo_import.mjs`: PASS.
+- `npm run check`: PASS.
+- `npm run validate:import`: PASS.
+- Latest screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_085830Z.png`
+
+Next step:
+- Hard refresh `http://localhost:8780/`.
+- Re-apply Walk_8F on the stylized GLB and verify hands stay on their own sides; if a specific imported rig has swapped left/right naming, inspect the mapping stage before applying templates.
+
 ## Blender Rotate Interaction And Walk Relaxed Arms - 2026-05-09
 
 Current objective:

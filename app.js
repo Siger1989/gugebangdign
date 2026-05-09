@@ -275,7 +275,7 @@ const MotionState = {
     skeleton: 0.28,
     controls: 0.32,
     control_size: 0.82,
-    control_thickness: 0.72,
+    control_thickness: 0.28,
   },
   show: {
     model: true,
@@ -1237,7 +1237,7 @@ const COMMAND_EXECUTORS = {
       skeleton: 0.28,
       controls: 0.32,
       control_size: 0.82,
-      control_thickness: 0.72,
+      control_thickness: 0.28,
       ...(data.visual_opacity || {}),
     };
     MotionState.selected_bone = MotionState.bones[0]?.name || null;
@@ -1389,7 +1389,7 @@ const COMMAND_EXECUTORS = {
   },
 
   set_control_visual_thickness: async ({ thickness }) => {
-    MotionState.visual_opacity.control_thickness = clampNumber(thickness, 0.35, 1.8, 0.72);
+    MotionState.visual_opacity.control_thickness = clampNumber(thickness, 0.05, 1.2, 0.28);
     return { message: `控制器线粗 ${MotionState.visual_opacity.control_thickness.toFixed(2)}` };
   },
 
@@ -2050,15 +2050,29 @@ function setWalkPoleControl(controlId, basis = getRigBasis()) {
 }
 
 function setWalkHandIkControl(controlId, side, basis = getRigBasis(), forwardOffset = 0, phase = 1) {
+  const shoulder = getJoint(`${side}_UpperArm`);
+  const chest = getJoint("Chest") || getJoint("Spine") || getJoint("Hips");
   const hips = getJoint("Hips");
-  if (!hips) {
+  if (!shoulder || !chest || !hips) {
     return;
   }
   const sideSign = side === "R" ? 1 : -1;
-  const relaxedTarget = new THREE.Vector3().fromArray(hips.position)
-    .addScaledVector(basis.right, sideSign * 0.36 * basis.scale)
-    .addScaledVector(basis.up, -0.10 * basis.scale)
+  const shoulderVec = new THREE.Vector3().fromArray(shoulder.position);
+  const centerVec = new THREE.Vector3().fromArray(chest.position);
+  let sideDirection = projectOntoPlane(shoulderVec.clone().sub(centerVec), basis.up);
+  if (sideDirection.length() < 0.001) {
+    sideDirection = basis.right.clone().multiplyScalar(sideSign);
+  }
+  sideDirection.normalize();
+  const desiredSide = basis.right.clone().multiplyScalar(sideSign);
+  if (sideDirection.dot(desiredSide) < 0) {
+    sideDirection.negate();
+  }
+  const relaxedTarget = shoulderVec.clone()
+    .addScaledVector(sideDirection, 0.12 * basis.scale)
+    .addScaledVector(basis.up, -0.42 * basis.scale)
     .addScaledVector(basis.forward, forwardOffset * basis.scale);
+  keepHandTargetOutsideBody(relaxedTarget, sideDirection, centerVec, basis.scale);
   setRigControlPosition(controlId, relaxedTarget.toArray(), false);
   const rotation = [
     phase * 0.035,
@@ -2066,6 +2080,15 @@ function setWalkHandIkControl(controlId, side, basis = getRigBasis(), forwardOff
     -sideSign * phase * 0.045,
   ];
   setRigControlRotation(controlId, rotation);
+}
+
+function keepHandTargetOutsideBody(target, sideDirection, center, scale) {
+  const minSideDistance = Math.max(0.16 * scale, 0.08);
+  const currentSideDistance = target.clone().sub(center).dot(sideDirection);
+  if (currentSideDistance < minSideDistance) {
+    target.addScaledVector(sideDirection, minSideDistance - currentSideDistance);
+  }
+  return target;
 }
 
 function setRigControlRotation(controlId, rotation) {
@@ -3460,8 +3483,8 @@ function getControlVisualSize() {
 }
 
 function getControlLineRadius(selected = false, hovered = false) {
-  const thickness = clampNumber(MotionState.visual_opacity.control_thickness, 0.35, 1.8, 0.72);
-  return (selected ? 0.007 : hovered ? 0.006 : 0.0046) * thickness;
+  const thickness = clampNumber(MotionState.visual_opacity.control_thickness, 0.05, 1.2, 0.28);
+  return (selected ? 0.0032 : hovered ? 0.0026 : 0.0018) * thickness;
 }
 
 function tagControlObject(group, object) {
@@ -3609,8 +3632,8 @@ function renderTransformGizmo() {
   });
   if (mode === "rotate") {
     const viewAxis = getCameraViewAxis();
-    gizmoGroup.add(createGizmoRing(position, viewAxis, size * 1.18, 0xffffff, 0.92, 0.006));
-    gizmoGroup.add(createGizmoRing(position, viewAxis, size * 0.55, 0xffffff, 0.72, 0.004));
+    gizmoGroup.add(createGizmoRing(position, viewAxis, size * 1.18, 0xffffff, 0.84, 0.0018));
+    gizmoGroup.add(createGizmoRing(position, viewAxis, size * 0.55, 0xffffff, 0.58, 0.0012));
     renderRotationDragGuide(position, viewAxis);
   }
 }
@@ -3620,10 +3643,10 @@ function createGizmoTranslateAxis(origin, axis, length, color) {
   const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthTest: false });
   const direction = axis.clone().normalize();
   const rotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, length, 8), material);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, length, 6), material);
   shaft.quaternion.copy(rotation);
   shaft.position.copy(origin).addScaledVector(direction, length * 0.5);
-  const head = new THREE.Mesh(new THREE.ConeGeometry(0.026, 0.075, 14), material.clone());
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.052, 12), material.clone());
   head.quaternion.copy(rotation);
   head.position.copy(origin).addScaledVector(direction, length);
   group.add(shaft, head);
@@ -3639,7 +3662,7 @@ function createGizmoScaleAxis(origin, axis, length, color) {
   return group;
 }
 
-function createGizmoRing(origin, axis, radius, color, opacity = 0.82, tube = 0.004) {
+function createGizmoRing(origin, axis, radius, color, opacity = 0.82, tube = 0.0016) {
   const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthTest: false });
   const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, tube, 8, 72), material);
   ring.position.copy(origin);
@@ -3658,8 +3681,8 @@ function renderRotationDragGuide(origin, viewAxis) {
     return;
   }
   const material = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.86, depthTest: false });
-  const line = createWorldSegment(origin, pointerPoint, 0.006, material);
-  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.022, 12, 8), material.clone());
+  const line = createWorldSegment(origin, pointerPoint, 0.0018, material);
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.012, 10, 6), material.clone());
   dot.position.copy(pointerPoint);
   gizmoGroup.add(line, dot);
 }
@@ -3797,8 +3820,8 @@ function renderUi() {
     el.controlSizeValue.textContent = (MotionState.visual_opacity.control_size ?? 0.82).toFixed(2);
   }
   if (el.controlThicknessInput && el.controlThicknessValue) {
-    el.controlThicknessInput.value = String(MotionState.visual_opacity.control_thickness ?? 0.72);
-    el.controlThicknessValue.textContent = (MotionState.visual_opacity.control_thickness ?? 0.72).toFixed(2);
+    el.controlThicknessInput.value = String(MotionState.visual_opacity.control_thickness ?? 0.28);
+    el.controlThicknessValue.textContent = (MotionState.visual_opacity.control_thickness ?? 0.28).toFixed(2);
   }
   el.characterForwardValue.textContent = formatCharacterForwardState();
   if (el.forwardAngleInput && el.forwardAngleValue) {
@@ -5222,9 +5245,9 @@ function getConstrainedRotationAngle(axis, dx, dy) {
   const screenAxis = getProjectedAxisScreenVector(axis);
   if (screenAxis.length() > 0.001) {
     const pointer = new THREE.Vector2(dx, dy);
-    return pointer.dot(screenAxis.normalize()) * 0.012;
+    return -pointer.dot(screenAxis.normalize()) * 0.012;
   }
-  return (Math.abs(dx) >= Math.abs(dy) ? dx : -dy) * 0.012;
+  return (Math.abs(dx) >= Math.abs(dy) ? -dx : dy) * 0.012;
 }
 
 function getViewPlaneRotationAngle(subject, event, dx, dy) {
@@ -5238,10 +5261,10 @@ function getViewPlaneRotationAngle(subject, event, dx, dy) {
       currentVector.normalize();
       const cross = startVector.x * currentVector.y - startVector.y * currentVector.x;
       const dot = THREE.MathUtils.clamp(startVector.dot(currentVector), -1, 1);
-      return -Math.atan2(cross, dot);
+      return Math.atan2(cross, dot);
     }
   }
-  return (dx - dy) * 0.008;
+  return (dy - dx) * 0.008;
 }
 
 function getProjectedAxisScreenVector(axis) {

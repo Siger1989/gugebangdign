@@ -2,6 +2,9 @@
 
 ## 2026-05-09 最新交接重点
 
+- 控制器和 Transform Gizmo 线宽已大幅变细；默认控制器线粗为 `0.28`，右上角仍可调。
+- 旋转方向已反向修正：鼠标拖动方向应与模型可见旋转方向一致。
+- Walk_8F 增加防交叉规则：手 IK 目标按各自肩膀外侧下垂，不再用全局左右偏移导致双手穿胸交叉；验证覆盖 dummy 和导入 sample GLB。
 - `R` 键交互补齐为 Blender 风格：进入旋转模式后鼠标移动实时旋转；左键释放或 Enter 确认，右键或 Esc 取消。旋转时显示外圈、内圈、XYZ 彩色环和从控制器拖出的白色半径线。
 - 视口地面层增加了 XYZ 场景轴提示。
 - Walk_8F 会把 T-Pose 横向展开的手臂先约束到身体两侧附近，再应用走路摆臂；Pole 控制器会按当前角色前方重新放置为膝盖在前、手肘在后。
@@ -13,7 +16,7 @@
 - `COG_CTRL` / `Root_CTRL` / `Global_CTRL` 旋转现在会驱动 Hips 分支，腰部/重心控制器能扭动身体。
 - IK Pole 默认规则：膝盖 Pole 在角色前方，手肘 Pole 在角色后方。
 - Walk_8F 模板不再因为未手动确认角色前方而失败；如果未确认，会使用当前前方并自动标记 confirmed。
-- 最新验证：`npm run validate:import` 通过，截图 `artifacts/screenshots/pipeline_acceptance_20260509_082721Z.png`。
+- 最新验证：`npm run validate:import` 通过，截图 `artifacts/screenshots/pipeline_acceptance_20260509_085830Z.png`。
 
 ## 项目定位
 
