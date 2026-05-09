@@ -16,6 +16,7 @@ Current progress:
   - middle-mouse orbit distance lock
   - knee pole following confirmed character forward
   - latest validation notes and remaining limitations
+- Published local commit `aeef251 Refresh direction handoff` to `origin/main`.
 
 Files changed:
 - `HANDOFF.md`
@@ -28,6 +29,7 @@ Commands run:
 - `git add -- CURRENT_STATE.md HANDOFF.md`
 - `git commit -m "Refresh direction handoff"`
 - `git push origin main`
+- `git push origin main` retry: PASS, `1b05360..aeef251 main -> main`
 
 Validation result: PASS
 
