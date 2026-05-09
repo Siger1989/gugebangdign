@@ -934,3 +934,665 @@ button:disabled {
     width: 238px;
   }
 }
+
+/* Desktop workbench layout */
+.app-shell {
+  grid-template-columns: 190px minmax(0, 1fr) 348px;
+  grid-template-rows: 28px auto minmax(0, 1fr);
+}
+
+.desktop-menu {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  padding: 0 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  background: #0b1119;
+}
+
+.app-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: #f5f9ff;
+  white-space: nowrap;
+}
+
+.desktop-menu nav {
+  display: flex;
+  gap: 14px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.desktop-menu nav span {
+  line-height: 28px;
+  white-space: nowrap;
+}
+
+.workbench-toolbar {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(17, 23, 34, 0.97);
+}
+
+.flow-steps {
+  grid-template-columns: repeat(6, minmax(92px, 1fr));
+  gap: 6px;
+}
+
+.flow-step {
+  min-height: 30px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.tool-strip {
+  grid-column: auto;
+  grid-template-columns: repeat(5, auto);
+  justify-content: end;
+}
+
+.tool-strip button {
+  min-width: 64px;
+  font-weight: 800;
+}
+
+.status-strip {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+
+.scene-panel {
+  grid-column: 1;
+  grid-row: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px;
+  overflow: auto;
+  border-right: 1px solid var(--line);
+  background: #111722;
+}
+
+.scene-panel h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.scene-tree {
+  display: grid;
+  gap: 6px;
+}
+
+.scene-item {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  min-height: 52px;
+  padding: 8px;
+  text-align: left;
+}
+
+.scene-item strong,
+.scene-item span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-item strong {
+  font-size: 12px;
+}
+
+.scene-item span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.scene-item.is-active {
+  border-color: var(--accent);
+  background: rgba(184, 148, 255, 0.16);
+}
+
+.scene-hint {
+  display: grid;
+  gap: 5px;
+  margin-top: auto;
+  padding: 8px;
+  border: 1px solid rgba(71, 210, 255, 0.18);
+  border-radius: 7px;
+  background: rgba(71, 210, 255, 0.055);
+}
+
+.scene-hint strong {
+  font-size: 11px;
+}
+
+.scene-hint span {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.stage-panel {
+  grid-column: 2;
+  grid-row: 3;
+  grid-template-rows: minmax(0, 1fr);
+  height: auto;
+  max-height: none;
+  padding-bottom: 176px;
+}
+
+.inspector-panel {
+  grid-column: 3;
+  grid-row: 3;
+  height: auto;
+  max-height: none;
+}
+
+.timeline-panel {
+  height: 176px;
+}
+
+.timeline-transport {
+  grid-template-columns: 54px 54px 86px 86px minmax(0, 1fr);
+}
+
+.timeline-editor {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 8px;
+  min-height: 0;
+}
+
+.timeline-track-labels {
+  display: grid;
+  grid-template-rows: 18px repeat(5, 18px);
+  gap: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.timeline-track-labels span {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-dopesheet {
+  display: grid;
+  grid-template-rows: 18px repeat(5, 18px);
+  gap: 4px;
+  min-width: 0;
+}
+
+.timeline-frame-ticks {
+  margin: 0;
+}
+
+.frame-tick {
+  min-height: 18px;
+  border-radius: 3px;
+}
+
+.timeline-keyframes {
+  display: contents;
+}
+
+.dopesheet-row {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: 3px;
+  min-width: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.key-pose,
+.track-marker {
+  align-self: center;
+  justify-self: center;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(148, 166, 189, 0.55);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.key-pose.has-keyframe,
+.track-marker {
+  color: var(--ok);
+}
+
+.key-pose.is-current,
+.track-marker.is-current {
+  color: var(--accent);
+  box-shadow: none;
+}
+
+.key-pose.is-selected,
+.track-marker.is-selected {
+  color: #ffffff;
+  outline: none;
+  text-shadow: 0 0 8px rgba(184, 148, 255, 0.9);
+}
+
+.key-pose.is-smooth,
+.track-marker.is-smooth {
+  color: var(--accent);
+}
+
+.key-pose span {
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+@media (max-width: 1260px), (max-height: 760px) {
+  .app-shell {
+    grid-template-columns: 156px minmax(0, 1fr) 318px;
+    grid-template-rows: 26px auto minmax(0, 1fr);
+  }
+
+  .desktop-menu nav {
+    gap: 10px;
+  }
+
+  .workbench-toolbar {
+    padding: 6px 8px;
+  }
+
+  .flow-steps {
+    grid-template-columns: repeat(6, minmax(76px, 1fr));
+  }
+
+  .flow-step {
+    font-size: 10px;
+  }
+
+  .tool-strip button {
+    min-width: 54px;
+    padding: 0 6px;
+  }
+
+  .status-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .scene-panel {
+    padding: 6px;
+  }
+
+  .stage-panel {
+    padding-bottom: 156px;
+  }
+
+  .timeline-panel {
+    height: 156px;
+  }
+
+  .timeline-head {
+    margin-bottom: 5px;
+  }
+
+  .timeline-editor {
+    grid-template-columns: 86px minmax(0, 1fr);
+  }
+
+  .timeline-track-labels,
+  .timeline-dopesheet {
+    grid-template-rows: 16px repeat(5, 15px);
+    gap: 3px;
+  }
+
+  .key-pose,
+  .track-marker {
+    width: 15px;
+    height: 15px;
+    font-size: 9px;
+  }
+}
+
+/* Compact pass: one function, one visible entry point */
+button,
+.file-button {
+  min-height: 24px;
+  border-radius: 5px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.hidden-command {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.app-shell {
+  grid-template-columns: 124px minmax(0, 1fr) 292px;
+  grid-template-rows: 20px 58px minmax(0, 1fr);
+}
+
+.desktop-menu {
+  height: 20px;
+  padding: 0 8px;
+}
+
+.desktop-menu nav {
+  display: none;
+}
+
+.workbench-toolbar {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  padding: 5px 6px;
+}
+
+.flow-steps {
+  grid-template-columns: repeat(6, minmax(76px, 1fr));
+  gap: 4px;
+}
+
+.work-action {
+  min-height: 26px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.work-action.is-active {
+  border-color: var(--accent);
+  background: rgba(184, 148, 255, 0.18);
+}
+
+.hidden-command {
+  display: none !important;
+}
+
+.tool-strip {
+  gap: 4px;
+}
+
+.tool-strip button {
+  min-width: 52px;
+  min-height: 26px;
+  padding: 0 7px;
+  font-size: 12px;
+}
+
+.status-strip {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.status-strip div {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.status-strip span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.status-strip strong {
+  margin: 0;
+  max-width: 96px;
+  font-size: 10px;
+}
+
+.scene-panel {
+  gap: 5px;
+  padding: 6px;
+}
+
+.scene-panel h2 {
+  font-size: 12px;
+}
+
+.scene-tree {
+  gap: 4px;
+}
+
+.scene-item {
+  min-height: 38px;
+  padding: 6px;
+}
+
+.scene-item strong {
+  font-size: 11px;
+}
+
+.scene-item span {
+  font-size: 9px;
+}
+
+.scene-hint {
+  display: none;
+}
+
+.stage-panel {
+  padding-bottom: 128px;
+}
+
+.inspector-panel {
+  gap: 6px;
+  padding: 6px;
+}
+
+.inspector-section,
+.debug-panel,
+.undo-redo-bar {
+  padding: 7px;
+  border-radius: 6px;
+}
+
+.inspector-section.is-active {
+  gap: 6px;
+}
+
+.inspector-section h2,
+.debug-panel h3 {
+  font-size: 13px;
+}
+
+.stage-note {
+  padding: 6px;
+  font-size: 10px;
+}
+
+.info-grid,
+.validation-grid,
+.debug-grid {
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 4px 6px;
+  font-size: 10px;
+}
+
+.field-row,
+.toggle-row {
+  grid-template-columns: 76px minmax(0, 1fr) 34px;
+  gap: 5px;
+  font-size: 10px;
+}
+
+.field-row.compact {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+
+.mapping-list {
+  max-height: 118px;
+}
+
+.mapping-chip,
+.source-bone-row,
+.keyframe-item {
+  padding: 4px 5px;
+  font-size: 9px;
+}
+
+.viewport-toggles {
+  top: 6px;
+  left: 6px;
+  right: 218px;
+  gap: 4px;
+}
+
+.viewport-toggles label,
+.viewport-help span {
+  min-height: 20px;
+  padding: 2px 6px;
+  font-size: 9px;
+}
+
+.viewport-opacity-controls {
+  top: 6px;
+  right: 6px;
+  width: 204px;
+  gap: 3px;
+  padding: 6px;
+}
+
+.viewport-opacity-controls label {
+  grid-template-columns: 54px minmax(0, 1fr) 30px;
+  gap: 5px;
+  font-size: 9px;
+}
+
+.timeline-panel {
+  height: 128px;
+  padding: 6px 8px;
+}
+
+.timeline-head {
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.timeline-metrics {
+  font-size: 10px;
+}
+
+.timeline-transport {
+  grid-template-columns: 42px 42px 70px 70px minmax(0, 1fr);
+  gap: 5px;
+  margin-bottom: 4px;
+}
+
+.timeline-transport button {
+  min-height: 22px;
+  padding: 0 5px;
+  font-size: 10px;
+}
+
+.timeline-editor {
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.timeline-track-labels,
+.timeline-dopesheet {
+  grid-template-rows: 15px repeat(5, 13px);
+  gap: 2px;
+}
+
+.timeline-track-labels {
+  font-size: 9px;
+}
+
+.frame-tick {
+  min-height: 15px;
+  font-size: 8px;
+}
+
+.key-pose,
+.track-marker {
+  width: 12px;
+  height: 12px;
+  font-size: 8px;
+}
+
+@media (max-width: 1260px), (max-height: 760px) {
+  .app-shell {
+    grid-template-columns: 112px minmax(0, 1fr) 276px;
+    grid-template-rows: 22px 54px minmax(0, 1fr);
+  }
+
+  .desktop-menu {
+    height: 22px;
+  }
+
+  .desktop-menu nav {
+    gap: 8px;
+  }
+
+  .flow-steps {
+    grid-template-columns: repeat(6, minmax(66px, 1fr));
+  }
+
+  .work-action,
+  .tool-strip button {
+    min-height: 24px;
+    font-size: 10px;
+  }
+
+  .tool-strip button {
+    min-width: 44px;
+  }
+
+  .status-strip {
+    gap: 7px;
+  }
+
+  .status-strip strong {
+    max-width: 72px;
+  }
+
+  .stage-panel {
+    padding-bottom: 116px;
+  }
+
+  .timeline-panel {
+    height: 116px;
+  }
+
+  .viewport-opacity-controls {
+    width: 190px;
+  }
+
+  .viewport-toggles {
+    right: 202px;
+  }
+}

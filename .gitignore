@@ -1,5 +1,9 @@
 node_modules/
 artifacts/
+dist/
+release/
+release-dir/
+release-fixed*/
 *.log
 .DS_Store
 Thumbs.db

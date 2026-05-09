@@ -1,5 +1,304 @@
 # CURRENT_STATE
 
+## Confirmed Direction Drives Binding And Walk Basis - 2026-05-09
+
+Current objective:
+- Make the user-adjusted model direction the only authority for binding and the Walk_8F motion basis.
+
+Current progress:
+- `getRigBasis()` now uses fixed map coordinates after direction confirmation:
+  - X = right
+  - Y = up
+  - Z = forward
+- `estimateHumanoidBasisFromPositions()` uses the same fixed map basis when direction is confirmed.
+- Binding still reads the current aligned imported source-bone world coordinates and does not rotate or flip the model again.
+- The import validation now simulates the sample model's correct manual alignment by rotating the model right 90 degrees before confirming direction.
+- Added validation that the confirmed rig basis forward vector is fixed to map forward.
+
+Files changed:
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run validate:import`
+- `npx electron-builder --win portable --config.directories.output=release-fixed5 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- Start-process smoke test for `release-fixed5\动作生成工作台 0.1.0.exe`
+
+Validation result: PASS
+
+Validation details:
+- `npm run validate:import`: PASS.
+- Latest screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_171602Z.png`
+- Latest EXE:
+  - `release-fixed5\动作生成工作台 0.1.0.exe`
+- EXE smoke:
+  - PASS. Process stayed alive after 8 seconds.
+
+Current blocking issue:
+- None.
+
+Next step:
+- User manual check in the latest EXE.
+
+## Manual Direction Is Authoritative - 2026-05-09
+
+Current objective:
+- Simplify the imported GLB direction workflow so the user's manually adjusted visible model direction is the only authority before binding.
+
+Current progress:
+- Removed automatic initial direction guessing on GLB import.
+- Imported models now start at `yaw_degrees: 0` and `confirmed: false`.
+- The user rotates the whole model with the model rotation buttons until the face matches the fixed yellow map-forward arrow.
+- `确认方向` only locks the currently visible model yaw.
+- `绑定骨骼赋值` reads the current aligned source-bone world coordinates and does not apply another front/back flip.
+- Walk_8F and IK generation use the bound aligned skeleton as the basis.
+- Added Electron preload and IPC file picker:
+  - `electron-preload.cjs`
+  - `desktopBridge.openGlbFile()`
+  - EXE no longer depends only on browser file input for importing GLB.
+- Removed the visible top menu labels (`文件 / 编辑 / 视图 / 动作 / 导出 / 帮助`) from the layout.
+- Split body controls:
+  - `重心` still affects the whole body.
+  - `胯部` rotates lower body and legs.
+  - `胸腰` rotates upper body without dragging the feet.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `styles.css`
+- `electron-main.cjs`
+- `electron-preload.cjs`
+- `package.json`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `node --check electron-main.cjs`
+- `node --check electron-preload.cjs`
+- `npm run check`
+- `npm run validate:import`
+- Electron smoke check for `desktopBridge.openGlbFile`
+- `npx electron-builder --win portable --config.directories.output=release-fixed4 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- Start-process smoke test for `release-fixed4\动作生成工作台 0.1.0.exe`
+
+Validation result: PASS
+
+Validation details:
+- `npm run validate:import`: PASS.
+- Latest screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_165158Z.png`
+- Electron smoke:
+  - `window.desktopBridge.openGlbFile`: present.
+  - `.desktop-menu nav`: removed.
+- Latest EXE:
+  - `release-fixed4\动作生成工作台 0.1.0.exe`
+- EXE smoke:
+  - PASS. Process stayed alive after 8 seconds.
+
+Current blocking issue:
+- None for the simplified direction-binding workflow.
+
+Next step:
+- User manual check in EXE:
+  1. `导入模型`
+  2. use model rotation buttons until the face matches the yellow map-forward arrow
+  3. `确认方向`
+  4. `绑定骨骼赋值`
+  5. `生成 IK 控制器`
+  6. `加载 Walk_8F 走路模板`
+
+## Button Direction Bind Stability Fix - 2026-05-09
+
+Current objective:
+- Fix the user-reported issue where using the built-in model rotation buttons, then clicking `确认方向` and `绑定骨骼赋值`, caused the imported character and source bones to jump angle/pose.
+
+Current progress:
+- Confirmed the correct workflow is based on the app's model rotation buttons, not mouse/camera view rotation.
+- `确认方向` now keeps the current `MotionState.direction.forward_sign` and `MotionState.direction.yaw_degrees`; it does not infer direction from the camera.
+- `绑定骨骼赋值` reads the already aligned imported source-bone world positions.
+- `syncSourceRigToMotionState()` no longer drives/deforms the imported GLB source rig during initial rest-pose binding.
+- Added validation that reproduces the user flow:
+  - import sample GLB
+  - click `模型右转15°` six times
+  - click `确认方向`
+  - capture imported source-rig world transforms
+  - click `绑定骨骼赋值`
+  - assert source-rig positions and rotations stay stable
+  - assert bound Humanoid hips match the confirmed aligned source hips
+
+Files changed:
+- `app.js`
+- `index.html`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short`
+- `git diff --stat`
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import`
+
+Validation result: PASS
+
+Validation details:
+- `npm run check`: PASS.
+- `npm run validate:import`: PASS.
+- Latest screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_152737Z.png`
+
+Current blocking issue:
+- None for the binding jump regression.
+
+Next step:
+- Rebuild the Windows portable EXE so the desktop version contains this fix.
+
+## Direction Binding And EXE Package - 2026-05-09
+
+Current objective:
+- Clean up the current imported-GLB workflow and produce a runnable Windows EXE.
+
+Current progress:
+- Removed the practical dependency on duplicate model import buttons:
+  - The top `导入模型` action opens the GLB file picker.
+  - The right inspector no longer exposes a second visible `导入 GLB` button.
+- Changed skeleton binding flow to one authoritative action:
+  - Import T-Pose GLB.
+  - Align/confirm model direction against the fixed yellow map-forward arrow.
+  - Click `绑定骨骼赋值`.
+- Added a guard so imported models cannot bind `Humanoid_v1` before direction is confirmed.
+- Changed the yellow direction arrow to mean fixed map forward, not a movable inferred character-forward arrow.
+- Fixed the left/right identity bug:
+  - Front/back direction flips no longer invert `basis.right`.
+  - Right/left hand IK controls keep their own side after direction correction and Walk_8F application.
+- Added Electron desktop packaging:
+  - `electron-main.cjs`
+  - `npm run desktop`
+  - `npm run dist:win`
+- Built runnable Windows outputs:
+  - `release/动作生成工作台 0.1.0.exe`
+  - `release-dir/win-unpacked/动作生成工作台.exe`
+- Follow-up fix after user reproduced a binding jump:
+  - Direction alignment is now applied directly to `Runtime.importedModelScene`.
+  - `create_humanoid_skeleton` reads the aligned source-bone world coordinates.
+  - Binding no longer drops the temporary preview rotation when switching from source skeleton to Humanoid_v1.
+  - Added validation that imports a GLB, rotates the model direction by 90 degrees, binds the skeleton, and checks the bound Hips position matches the rotated source Hips position.
+  - Rebuilt the latest fixed portable EXE at `release-fixed2/动作生成工作台 0.1.0.exe`.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+- `package.json`
+- `package-lock.json`
+- `electron-main.cjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `npm install`
+- `node --check app.js`
+- `node --check scripts/validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import`
+- `npm run dist:win`
+- `npx electron-builder --win dir --config.directories.output=release-dir`
+- Electron smoke test through Playwright.
+- Start-process smoke test for both packaged EXE outputs.
+
+Validation result: PASS
+
+Validation details:
+- `npm run check`: PASS.
+- `npm run validate:import`: PASS.
+- Latest screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_150343Z.png`
+- Desktop app smoke test:
+  - `electron .` opened `index.html` and found `#rigCanvas`.
+  - `release-dir/win-unpacked/动作生成工作台.exe` stayed running after launch.
+  - `release/动作生成工作台 0.1.0.exe` stayed running after launch.
+  - `release-fixed2/动作生成工作台 0.1.0.exe` stayed running after launch.
+
+Current blocking issue:
+- `npm run dist:win` generated the portable EXE but returned a cleanup error because `release/codex-action-rig-demo-0.1.0-x64.nsis.7z` was briefly locked by Windows.
+- A clean directory build was generated successfully under `release-dir/win-unpacked`.
+
+Next step:
+- Use `release-fixed2/动作生成工作台 0.1.0.exe` for direct testing.
+- If portable cleanup continues to be noisy, keep `release-dir/win-unpacked` as the stable build target or zip that folder for delivery.
+
+## Desktop Workbench UI Layout - 2026-05-09
+
+Current objective:
+- Convert the current numbered web workflow UI into the agreed Chinese desktop-style action workbench layout while keeping existing skeleton, IK, and motion logic unchanged.
+
+Current progress:
+- Replaced the numbered top flow with a desktop-style menu and workbench toolbar:
+  - 导入模型
+  - 骨骼识别
+  - 生成 IK 控制器
+  - 动作编辑
+  - 验证
+  - 导出
+- Removed the visible `吸附` and `镜像` toolbar buttons because they do not yet have real implemented behavior.
+- Added a left `场景` panel showing current model, skeleton, IK controller, and motion state.
+- Reworked the center/right structure into:
+  - left scene panel
+  - center 3D viewport
+  - right property inspector
+  - bottom timeline
+- Renamed the right-side panels to match the current agreed workflow:
+  - `导入模型`
+  - `骨骼识别`
+  - `IK 控制器`
+  - `动作编辑`
+  - `验证`
+  - `导出`
+- Changed the bottom timeline from large 8-pose cards into a compact Dope Sheet style layout with:
+  - frame ruler
+  - key pose row
+  - global / COG row
+  - body row
+  - hand IK row
+  - foot IK row
+- Kept the existing keyframe data model and `.key-pose.has-keyframe` validation contract intact.
+
+Files changed:
+- `index.html`
+- `styles.css`
+- `app.js`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import`
+
+Validation result: PASS
+
+Validation details:
+- `node --check app.js`: PASS.
+- `node --check scripts\validate_demo_import.mjs`: PASS.
+- `npm run check`: PASS.
+- `npm run validate:import`: PASS.
+- Latest screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_133533Z.png`
+
+Current blocking issue:
+- Browser-use plugin screenshot attempt timed out twice, but the Playwright validation screenshot was generated successfully and manually inspected.
+
+Next step:
+- Hard refresh `http://localhost:8780/index.html`.
+- Continue discussion/implementation around the professional timeline functions: copy keyframe, paste keyframe, mirror selected keyframe, delete keyframe, and draggable keyframe movement.
+
 ## Handoff Before Gizmo Ring Fix - 2026-05-09
 
 Current objective:

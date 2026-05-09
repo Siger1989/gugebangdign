@@ -3,8 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "description": "Standalone Chinese MVP demo for skeleton building, weight painting, and animation keyframe adjustment.",
+  "main": "electron-main.cjs",
   "scripts": {
     "start": "python -m http.server 8780",
+    "desktop": "electron .",
+    "dist:win": "electron-builder --win portable",
     "check": "node --check app.js",
     "validate:import": "node scripts/validate_demo_import.mjs",
     "tutorial:video": "node scripts/create_tutorial_video.mjs"
@@ -13,6 +16,31 @@
     "three": "0.164.1"
   },
   "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3",
     "playwright-core": "^1.59.1"
+  },
+  "build": {
+    "appId": "com.codex.actionrig.workbench",
+    "productName": "动作生成工作台",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "index.html",
+      "app.js",
+      "styles.css",
+      "electron-main.cjs",
+      "electron-preload.cjs",
+      "node_modules/three/**/*",
+      "sample_models/**/*"
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "signDlls": false,
+      "target": [
+        "portable"
+      ]
+    }
   }
 }

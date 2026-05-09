@@ -166,6 +166,15 @@ const CORE_IK_CONTROL_DEFS = [
   { id: "R_Elbow_Pole", type: "pole", joint: "R_Forearm", side: "R", offset: [0.08, 0.05, -0.34], pole_forward_sign: -1 },
   { id: "L_Elbow_Pole", type: "pole", joint: "L_Forearm", side: "L", offset: [-0.08, 0.05, -0.34], pole_forward_sign: -1 },
 ];
+const LOWER_BODY_CONTROL_JOINTS = [
+  "R_UpperLeg", "R_LowerLeg", "R_Foot", "R_Toe",
+  "L_UpperLeg", "L_LowerLeg", "L_Foot", "L_Toe",
+];
+const UPPER_BODY_CONTROL_JOINTS = [
+  "Spine", "Chest", "Neck", "Head",
+  "R_UpperArm", "R_Forearm", "R_Hand",
+  "L_UpperArm", "L_Forearm", "L_Hand",
+];
 const JOINT_CONTROL_DEFS = HUMANOID_JOINT_NAMES.map((joint) => ({
   id: `${joint}_CTRL`,
   type: "joint",
@@ -339,19 +348,28 @@ const Runtime = {
 };
 
 const el = {
-  flowSteps: [...document.querySelectorAll(".flow-step")],
+  flowSteps: [...document.querySelectorAll(".work-action")],
+  sceneItems: [...document.querySelectorAll(".scene-item")],
   toolButtons: [...document.querySelectorAll(".tool-button")],
   spaceToggleButton: document.querySelector("#spaceToggleButton"),
   snapToggleButton: document.querySelector("#snapToggleButton"),
   mirrorToggleButton: document.querySelector("#mirrorToggleButton"),
   panels: [...document.querySelectorAll(".inspector-section")],
   statusModel: document.querySelector("#statusModel"),
+  statusDirection: document.querySelector("#statusDirection"),
   statusSkeleton: document.querySelector("#statusSkeleton"),
   statusIk: document.querySelector("#statusIk"),
   statusKeyframes: document.querySelector("#statusKeyframes"),
   statusFrame: document.querySelector("#statusFrame"),
   statusDirty: document.querySelector("#statusDirty"),
   statusValidation: document.querySelector("#statusValidation"),
+  sceneModelState: document.querySelector("#sceneModelState"),
+  sceneSkeletonState: document.querySelector("#sceneSkeletonState"),
+  sceneRigState: document.querySelector("#sceneRigState"),
+  sceneMotionState: document.querySelector("#sceneMotionState"),
+  modelPanelStatus: document.querySelector("#modelPanelStatus"),
+  modelPanelBoneCount: document.querySelector("#modelPanelBoneCount"),
+  modelPanelType: document.querySelector("#modelPanelType"),
   timelineKeyframes: document.querySelector("#timelineKeyframes"),
   timelineKeyPoseCount: document.querySelector("#timelineKeyPoseCount"),
   timelineLoopState: document.querySelector("#timelineLoopState"),
@@ -425,6 +443,11 @@ function bindUi() {
   window.addEventListener("resize", resize);
 
   el.flowSteps.forEach((button) => {
+    button.addEventListener("click", () => {
+      void handleWorkbenchAction(button);
+    });
+  });
+  el.sceneItems.forEach((button) => {
     button.addEventListener("click", () => executeCommand(createCommand("set_stage", { stage: button.dataset.stage })));
   });
   el.toolButtons.forEach((button) => {
@@ -449,7 +472,7 @@ function bindUi() {
   document.querySelector("#modelFileInput").addEventListener("change", (event) => {
     const file = event.target.files?.[0];
     if (file) {
-      executeCommand(createCommand("import_glb", { file }));
+      void executeCommand(createCommand("import_glb", { file }));
       event.target.value = "";
     }
   });
@@ -461,15 +484,15 @@ function bindUi() {
   });
   document.querySelector("#confirmForwardButton").addEventListener("click", () => {
     executeCommand(createCommand("set_character_direction", {
-      forward_sign: MotionState.direction.forward_sign,
+      forward_sign: 1,
       yaw_degrees: MotionState.direction.yaw_degrees,
       confirmed: true,
     }));
   });
   document.querySelector("#flipForwardButton").addEventListener("click", () => {
     executeCommand(createCommand("set_character_direction", {
-      forward_sign: MotionState.direction.forward_sign === 1 ? -1 : 1,
-      yaw_degrees: MotionState.direction.yaw_degrees,
+      forward_sign: 1,
+      yaw_degrees: normalizeForwardYaw((MotionState.direction.yaw_degrees || 0) + 180),
       confirmed: true,
     }));
   });
@@ -481,7 +504,7 @@ function bindUi() {
   });
   el.forwardAngleInput.addEventListener("change", () => {
     executeCommand(createCommand("set_character_direction", {
-      forward_sign: MotionState.direction.forward_sign,
+      forward_sign: 1,
       yaw_degrees: Number(el.forwardAngleInput.value),
       confirmed: false,
     }));
@@ -639,9 +662,60 @@ function bindUi() {
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 }
 
+async function handleWorkbenchAction(button) {
+  const action = button.dataset.action;
+  const stage = button.dataset.stage;
+  if (action === "import_model") {
+    await executeCommand(createCommand("set_stage", { stage: "model" }));
+    await openModelFilePicker();
+    return;
+  }
+  if (action === "identify_skeleton") {
+    executeCommand(createCommand("create_humanoid_skeleton"));
+    return;
+  }
+  if (action === "create_ik") {
+    executeCommand(createCommand("create_ik_controls"));
+    return;
+  }
+  if (action === "validate_motion") {
+    executeCommand(createCommand("validate_motion"));
+    return;
+  }
+  if (action === "export_motion") {
+    executeCommand(createCommand("set_stage", { stage: "export" }));
+    executeCommand(createCommand("export_motion_json"));
+    return;
+  }
+  executeCommand(createCommand("set_stage", { stage }));
+}
+
+async function openModelFilePicker() {
+  if (window.desktopBridge?.openGlbFile) {
+    const desktopFile = await window.desktopBridge.openGlbFile();
+    if (!desktopFile) {
+      return;
+    }
+    const file = createFileFromDesktopSelection(desktopFile);
+    await executeCommand(createCommand("import_glb", { file }));
+    return;
+  }
+  document.querySelector("#modelFileInput")?.click();
+}
+
+function createFileFromDesktopSelection(desktopFile) {
+  const rawBuffer = desktopFile.buffer;
+  const buffer = rawBuffer instanceof ArrayBuffer
+    ? rawBuffer
+    : new Uint8Array(rawBuffer || []).buffer;
+  return new File([buffer], desktopFile.name || "imported-model.glb", {
+    type: desktopFile.name?.toLowerCase().endsWith(".gltf") ? "model/gltf+json" : "model/gltf-binary",
+  });
+}
+
 function adjustForwardYaw(deltaDegrees) {
   executeCommand(createCommand("set_character_direction", {
-    forward_sign: MotionState.direction.forward_sign,
+    forward_sign: 1,
     yaw_degrees: normalizeForwardYaw((MotionState.direction.yaw_degrees || 0) + deltaDegrees),
     confirmed: false,
   }));
@@ -783,7 +857,8 @@ const COMMAND_EXECUTORS = {
     MotionState.source_bones = extractSourceBones(Runtime.importedModelScene);
     MotionState.humanoid_mapping = autoMapHumanoidBones(MotionState.source_bones);
     MotionState.joint_rotations = {};
-    MotionState.direction = { forward_sign: inferInitialForwardSign(), yaw_degrees: 0, confirmed: false };
+    MotionState.direction = { forward_sign: 1, yaw_degrees: 0, confirmed: false };
+    applyImportedModelAlignment();
     MotionState.selected_source_bone_id = MotionState.source_bones[0]?.id || null;
     MotionState.import_diagnostics = {
       ...importDiagnostics,
@@ -902,6 +977,10 @@ const COMMAND_EXECUTORS = {
   },
 
   create_humanoid_skeleton: async () => {
+    if (MotionState.source_bones.length > 0 && !MotionState.direction?.confirmed) {
+      throw new Error("请先把模型正面对齐地图黄色前方箭头，并点击“确认方向”，再绑定骨骼赋值。");
+    }
+    applyImportedModelAlignment();
     const { joints, bones } = createHumanoidSkeletonData();
     const mappedCount = getMappingCount();
     MotionState.skeleton = {
@@ -991,7 +1070,7 @@ const COMMAND_EXECUTORS = {
     const autoConfirmedDirection = !MotionState.direction?.confirmed;
     if (autoConfirmedDirection) {
       MotionState.direction = {
-        forward_sign: MotionState.direction?.forward_sign === -1 ? -1 : 1,
+        forward_sign: 1,
         yaw_degrees: normalizeForwardYaw(MotionState.direction?.yaw_degrees || 0),
         confirmed: true,
       };
@@ -1223,7 +1302,7 @@ const COMMAND_EXECUTORS = {
     MotionState.humanoid_mapping = data.humanoid_mapping || {};
     MotionState.import_diagnostics = data.import_diagnostics || createEmptyImportDiagnostics();
     MotionState.visual_analysis = data.visual_analysis || createEmptyVisualAnalysis();
-    MotionState.direction = data.direction || { forward_sign: 1, confirmed: false };
+    MotionState.direction = normalizeDirectionState(data.direction);
     MotionState.bones = data.bones || [];
     MotionState.joints = data.joints || [];
     MotionState.joint_rotations = data.joint_rotations || {};
@@ -1320,12 +1399,14 @@ const COMMAND_EXECUTORS = {
     return { message: `已选中控制器 ${selected ? translateControlName(selected.id) : "无"}` };
   },
 
-  set_character_direction: async ({ forward_sign, yaw_degrees = MotionState.direction?.yaw_degrees || 0, confirmed = true }) => {
-    const sign = Number(forward_sign) === -1 ? -1 : 1;
+  set_character_direction: async ({ yaw_degrees = MotionState.direction?.yaw_degrees || 0, confirmed = true }) => {
+    const sign = 1;
     const yaw = normalizeForwardYaw(yaw_degrees);
     MotionState.direction = { forward_sign: sign, yaw_degrees: yaw, confirmed: Boolean(confirmed) };
+    applyImportedModelAlignment();
     if (MotionState.skeleton?.id === "Humanoid_v1") {
       rebuildHumanoidSkeletonFromMapping();
+      syncSourceRigToMotionState();
     } else if (MotionState.skeleton) {
       MotionState.skeleton.direction = MotionState.direction;
     }
@@ -1459,6 +1540,7 @@ function snapshotCoreState() {
 
 function restoreCoreState(snapshot) {
   Object.assign(MotionState, deepClone(snapshot));
+  applyImportedModelAlignment();
   syncSourceRigToMotionState();
 }
 
@@ -1717,6 +1799,7 @@ function getBoneNameForJoint(joint) {
 }
 
 function createSourceSkeletonData() {
+  applyImportedModelAlignment();
   const sourceNameById = new Map();
   MotionState.source_bones.forEach((bone, index) => {
     sourceNameById.set(bone.id, createSourceJointName(bone, index));
@@ -1725,7 +1808,7 @@ function createSourceSkeletonData() {
     name: sourceNameById.get(bone.id),
     display_name: bone.name,
     side: bone.side_guess,
-    position: [...bone.position],
+    position: [...(getSourceBoneWorldPosition(bone) || bone.position)],
     source_bone_id: bone.id,
     source_bone_name: bone.name,
     parent_source_bone_id: bone.parent_id,
@@ -1837,6 +1920,16 @@ function estimateHumanoidBasisFromPositions(positionByName) {
     up = fallbackUp.clone();
   }
   up.normalize();
+  if (MotionState.direction?.confirmed) {
+    const height = getRigHeight();
+    return {
+      right: fallbackRight.clone(),
+      up: fallbackUp.clone(),
+      forward: fallbackForward.clone(),
+      height,
+      scale: Math.max(height / 1.82, 0.05),
+    };
+  }
 
   let right = new THREE.Vector3();
   [
@@ -1858,19 +1951,13 @@ function estimateHumanoidBasisFromPositions(positionByName) {
   }
   right.normalize();
 
+  const rawRight = right.clone();
   let forward = right.clone().cross(up);
   if (forward.length() < 0.001) {
     forward = fallbackForward.clone();
   }
   forward.normalize();
-  if (MotionState.direction?.forward_sign === -1) {
-    forward.negate();
-  }
-  const yawOffset = getDirectionYawRadians();
-  if (Math.abs(yawOffset) > 0.000001) {
-    forward.applyAxisAngle(up, yawOffset).normalize();
-  }
-  right = up.clone().cross(forward);
+  right = rawRight;
   if (right.length() < 0.001) {
     right = fallbackRight.clone();
   }
@@ -1899,11 +1986,15 @@ function applyOptionalHumanoidFallbackPositions(positionByName) {
 }
 
 function createHumanoidSkeletonData() {
+  applyImportedModelAlignment();
   const sourceById = new Map(MotionState.source_bones.map((bone) => [bone.id, bone]));
   const positionByName = new Map();
   HUMANOID_JOINT_NAMES.forEach((name) => {
     const sourceBone = sourceById.get(MotionState.humanoid_mapping[name]);
-    positionByName.set(name, [...(sourceBone?.position || HUMANOID_REST_POSITIONS[name])]);
+    const sourcePosition = sourceBone
+      ? getSourceBoneWorldPosition(sourceBone) || applyModelAlignmentToPosition(sourceBone.position)
+      : null;
+    positionByName.set(name, sourcePosition ? [...sourcePosition] : [...HUMANOID_REST_POSITIONS[name]]);
   });
   applyOptionalHumanoidFallbackPositions(positionByName);
   const joints = HUMANOID_JOINT_NAMES.map((name) => {
@@ -2203,13 +2294,22 @@ function getControlPositionForDef(def, joint, basis = getRigBasis()) {
     return new THREE.Vector3(hips.x, footY + basis.scale * 0.025, hips.z).addScaledVector(basis.forward, -0.08 * basis.scale).toArray();
   }
   if (def.id === "COG_CTRL") {
-    return jointVec.clone().addScaledVector(basis.up, 0.11 * basis.scale).toArray();
+    return jointVec.clone()
+      .addScaledVector(basis.up, 0.18 * basis.scale)
+      .addScaledVector(basis.forward, -0.035 * basis.scale)
+      .toArray();
   }
   if (def.id === "Pelvis_CTRL") {
-    return jointVec.clone().addScaledVector(basis.up, 0.035 * basis.scale).toArray();
+    return jointVec.clone()
+      .addScaledVector(basis.up, 0.035 * basis.scale)
+      .addScaledVector(basis.forward, 0.055 * basis.scale)
+      .toArray();
   }
   if (def.id === "Chest_CTRL") {
-    return jointVec.clone().addScaledVector(basis.up, 0.015 * basis.scale).toArray();
+    return jointVec.clone()
+      .addScaledVector(basis.up, 0.06 * basis.scale)
+      .addScaledVector(basis.forward, -0.045 * basis.scale)
+      .toArray();
   }
   if (def.id === "Head_CTRL") {
     return jointVec.clone().addScaledVector(basis.up, 0.035 * basis.scale).toArray();
@@ -2245,6 +2345,76 @@ function inferInitialForwardSign() {
   return 1;
 }
 
+function inferInitialModelYawDegrees() {
+  if (MotionState.source_bones.length === 0 || Object.keys(MotionState.humanoid_mapping || {}).length === 0) {
+    return 0;
+  }
+  const getSourceVector = (jointName) => {
+    const sourceId = MotionState.humanoid_mapping[jointName];
+    const sourceBone = MotionState.source_bones.find((bone) => bone.id === sourceId);
+    return sourceBone?.position ? new THREE.Vector3().fromArray(sourceBone.position) : null;
+  };
+  const hips = getSourceVector("Hips");
+  let up = getSourceVector("Head")?.sub(hips || new THREE.Vector3()) || null;
+  if (!up || up.length() < 0.001) {
+    up = getSourceVector("Chest")?.sub(hips || new THREE.Vector3()) || null;
+  }
+  if (!up || up.length() < 0.001) {
+    up = new THREE.Vector3(0, 1, 0);
+  }
+  up.normalize();
+
+  let toeForward = new THREE.Vector3();
+  [["R_Foot", "R_Toe"], ["L_Foot", "L_Toe"]].forEach(([footName, toeName]) => {
+    const foot = getSourceVector(footName);
+    const toe = getSourceVector(toeName);
+    if (!foot || !toe) {
+      return;
+    }
+    const forward = projectOntoPlane(toe.sub(foot), up);
+    if (forward.length() > 0.001) {
+      toeForward.add(forward.normalize());
+    }
+  });
+  if (toeForward.length() > 0.001) {
+    toeForward.normalize();
+    return yawToAlignForwardToMap(toeForward);
+  }
+
+  let right = new THREE.Vector3();
+  [["R_Hand", "L_Hand"], ["R_Foot", "L_Foot"], ["R_UpperArm", "L_UpperArm"], ["R_UpperLeg", "L_UpperLeg"]]
+    .forEach(([rightName, leftName]) => {
+      const rightPoint = getSourceVector(rightName);
+      const leftPoint = getSourceVector(leftName);
+      if (!rightPoint || !leftPoint) {
+        return;
+      }
+      const side = projectOntoPlane(rightPoint.sub(leftPoint), up);
+      if (side.length() > 0.001) {
+        right.add(side.normalize());
+      }
+    });
+  if (right.length() < 0.001) {
+    return 0;
+  }
+  right.normalize();
+  const inferredForward = up.clone().cross(right);
+  if (inferredForward.length() < 0.001) {
+    return 0;
+  }
+  inferredForward.normalize();
+  return yawToAlignForwardToMap(inferredForward);
+}
+
+function yawToAlignForwardToMap(forward) {
+  const planar = projectOntoPlane(forward, new THREE.Vector3(0, 1, 0));
+  if (planar.length() < 0.001) {
+    return 0;
+  }
+  planar.normalize();
+  return normalizeForwardYaw(-THREE.MathUtils.radToDeg(Math.atan2(planar.x, planar.z)));
+}
+
 function normalizeForwardYaw(value) {
   let degrees = Number(value);
   if (!Number.isFinite(degrees)) {
@@ -2255,14 +2425,62 @@ function normalizeForwardYaw(value) {
   return Math.round(degrees);
 }
 
+function normalizeDirectionState(direction = {}) {
+  const legacyFlip = Number(direction.forward_sign) === -1 ? 180 : 0;
+  return {
+    forward_sign: 1,
+    yaw_degrees: normalizeForwardYaw((direction.yaw_degrees || 0) + legacyFlip),
+    confirmed: Boolean(direction.confirmed),
+  };
+}
+
 function getDirectionYawRadians() {
   return THREE.MathUtils.degToRad(normalizeForwardYaw(MotionState.direction?.yaw_degrees || 0));
+}
+
+function getModelFacingYawDegrees() {
+  return normalizeForwardYaw(MotionState.direction?.yaw_degrees || 0);
+}
+
+function getModelFacingYawRadians() {
+  return THREE.MathUtils.degToRad(getModelFacingYawDegrees());
+}
+
+function getModelAlignmentQuaternion() {
+  if (MotionState.model.type !== "glb_reference" || MotionState.source_bones.length === 0) {
+    return new THREE.Quaternion();
+  }
+  return new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), getModelFacingYawRadians());
+}
+
+function applyImportedModelAlignment() {
+  if (!Runtime.importedModelScene || MotionState.model.type !== "glb_reference" || MotionState.source_bones.length === 0) {
+    return false;
+  }
+  Runtime.importedModelScene.rotation.y = getModelFacingYawRadians();
+  Runtime.importedModelScene.updateMatrixWorld(true);
+  return true;
+}
+
+function applyModelAlignmentToPosition(position) {
+  const vector = new THREE.Vector3().fromArray(position || [0, 0, 0]);
+  return vector.applyQuaternion(getModelAlignmentQuaternion()).toArray();
 }
 
 function getRigBasis() {
   const fallbackRight = new THREE.Vector3(1, 0, 0);
   const fallbackUp = new THREE.Vector3(0, 1, 0);
   const fallbackForward = new THREE.Vector3(0, 0, 1);
+  if (MotionState.direction?.confirmed) {
+    const height = getRigHeight();
+    return {
+      right: fallbackRight.clone(),
+      up: fallbackUp.clone(),
+      forward: fallbackForward.clone(),
+      height,
+      scale: Math.max(height / 1.82, 0.05),
+    };
+  }
   const hips = getRestVector("Hips");
   let up = getRestVector("Head").sub(hips);
   if (up.length() < 0.001) {
@@ -2323,19 +2541,13 @@ function getRigBasis() {
     right = fallbackRight.clone();
   }
   right.normalize();
+  const rawRight = right.clone();
   forward = right.clone().cross(up);
   if (forward.length() < 0.001) {
     forward = fallbackForward.clone();
   }
   forward.normalize();
-  if (MotionState.direction?.forward_sign === -1) {
-    forward.negate();
-  }
-  const yawOffset = getDirectionYawRadians();
-  if (Math.abs(yawOffset) > 0.000001) {
-    forward.applyAxisAngle(up, yawOffset).normalize();
-  }
-  right = up.clone().cross(forward);
+  right = rawRight;
   if (right.length() < 0.001) {
     right = fallbackRight.clone();
   }
@@ -2395,6 +2607,7 @@ function resetRuntimeSourceBonesToRest() {
   if (Runtime.sourceBoneRestById.size === 0) {
     return false;
   }
+  applyImportedModelAlignment();
   Runtime.sourceBoneRestById.forEach((rest, id) => {
     const bone = Runtime.sourceBoneById.get(id);
     if (!bone) {
@@ -2512,10 +2725,21 @@ function driveMappedSourceRigFromJoints(joints) {
 }
 
 function syncSourceRigToMotionState() {
-  if (MotionState.skeleton?.id === "Humanoid_v1" && MotionState.joints.length > 0) {
+  if (MotionState.skeleton?.id === "Humanoid_v1" && MotionState.joints.length > 0 && shouldDriveSourceRigFromMotionState()) {
     return driveMappedSourceRigFromJoints(MotionState.joints);
   }
   return resetRuntimeSourceBonesToRest();
+}
+
+function shouldDriveSourceRigFromMotionState() {
+  if (Object.keys(MotionState.joint_rotations || {}).length > 0 || MotionState.keyframes.length > 0) {
+    return true;
+  }
+  const restByName = new Map((MotionState.skeleton?.rest_joints || []).map((joint) => [joint.name, joint.position]));
+  return MotionState.joints.some((joint) => {
+    const rest = restByName.get(joint.name);
+    return rest && distance(joint.position, rest) > 0.0001;
+  });
 }
 
 function applyPoseAtFrame(frame) {
@@ -2654,6 +2878,28 @@ function rotateJointBranchByQuaternion(jointName, quaternion) {
   return true;
 }
 
+function rotateJointSubsetByQuaternion(pivotJointName, jointNames, quaternion, rotationJointName = pivotJointName) {
+  const pivotJoint = getJoint(pivotJointName);
+  if (!pivotJoint || !quaternion) {
+    return false;
+  }
+  const normalized = quaternion.clone().normalize();
+  if (rotationJointName && EXPLICIT_ROTATION_JOINTS.has(rotationJointName)) {
+    accumulateJointRotation(rotationJointName, normalized);
+  }
+  const pivot = new THREE.Vector3().fromArray(pivotJoint.position);
+  jointNames.forEach((name) => {
+    const item = getJoint(name);
+    if (!item || name === pivotJointName) {
+      return;
+    }
+    const point = new THREE.Vector3().fromArray(item.position).sub(pivot).applyQuaternion(normalized).add(pivot);
+    item.position = point.toArray();
+  });
+  driveMappedSourceRigFromJoints(MotionState.joints);
+  return true;
+}
+
 function applyControlToJoint(control, previousControl = null) {
   const joint = getJoint(control.target_joint);
   if (!joint) {
@@ -2689,7 +2935,27 @@ function applyControlToJoint(control, previousControl = null) {
     driveMappedSourceRigFromJoints(MotionState.joints);
     return;
   }
-  if (["pelvis", "chest", "head"].includes(control.type)) {
+  if (control.type === "pelvis") {
+    const previousRotation = getControlRotationQuaternion(previousControl || { rotation: [0, 0, 0] });
+    const nextRotation = getControlRotationQuaternion(control);
+    const deltaRotation = nextRotation.clone().multiply(previousRotation.clone().invert()).normalize();
+    if (!isIdentityQuaternion(deltaRotation)) {
+      rotateJointSubsetByQuaternion("Hips", LOWER_BODY_CONTROL_JOINTS, deltaRotation, null);
+    }
+    driveMappedSourceRigFromJoints(MotionState.joints);
+    return;
+  }
+  if (control.type === "chest") {
+    const previousRotation = getControlRotationQuaternion(previousControl || { rotation: [0, 0, 0] });
+    const nextRotation = getControlRotationQuaternion(control);
+    const deltaRotation = nextRotation.clone().multiply(previousRotation.clone().invert()).normalize();
+    if (!isIdentityQuaternion(deltaRotation)) {
+      rotateJointSubsetByQuaternion("Spine", UPPER_BODY_CONTROL_JOINTS, deltaRotation, "Spine");
+    }
+    driveMappedSourceRigFromJoints(MotionState.joints);
+    return;
+  }
+  if (control.type === "head") {
     const previousRotation = getControlRotationQuaternion(previousControl || { rotation: [0, 0, 0] });
     const nextRotation = getControlRotationQuaternion(control);
     const deltaRotation = nextRotation.clone().multiply(previousRotation.clone().invert()).normalize();
@@ -3125,6 +3391,7 @@ function renderSceneObjects() {
   clearGroup(labelGroup);
   clearGroup(validationGroup);
 
+  applyViewportAlignmentPreview();
   grid.visible = MotionState.show.ground_plane;
   groundPlane.visible = MotionState.show.ground_plane;
 
@@ -3137,6 +3404,12 @@ function renderSceneObjects() {
   renderTransformGizmo();
   renderMotionPaths();
   renderValidationIssues();
+}
+
+function applyViewportAlignmentPreview() {
+  applyImportedModelAlignment();
+  modelGroup.rotation.set(0, 0, 0);
+  sourceSkeletonGroup.rotation.set(0, 0, 0);
 }
 
 function renderModel() {
@@ -3364,8 +3637,8 @@ function getIkControlLabel(control) {
   if (control.id === "Global_CTRL") return "全局";
   if (control.id === "Root_CTRL") return "Root";
   if (control.id === "COG_CTRL") return "重心";
-  if (control.id === "Pelvis_CTRL") return "腰";
-  if (control.id === "Chest_CTRL") return "胸";
+  if (control.id === "Pelvis_CTRL") return "胯部";
+  if (control.id === "Chest_CTRL") return "胸腰";
   if (control.id === "Head_CTRL") return "头";
   if (control.id === "R_Hand_IK") return "右手";
   if (control.id === "L_Hand_IK") return "左手";
@@ -3747,15 +4020,19 @@ function renderValidationIssues() {
 }
 
 function renderDirectionHint() {
-  const directionStages = new Set(["skeleton", "mapping", "control_rig", "ik", "motion"]);
-  if (!directionStages.has(Runtime.stage) || !MotionState.skeleton || MotionState.joints.length === 0) {
+  const directionStages = new Set(["model", "skeleton", "mapping", "control_rig", "ik", "motion"]);
+  if (!directionStages.has(Runtime.stage) || !MotionState.model.loaded) {
     return;
   }
-  const hips = getJoint("Hips") || MotionState.joints[0];
-  const basis = getRigBasis();
-  const start = new THREE.Vector3().fromArray(hips.position).addScaledVector(basis.up, -0.1 * basis.scale);
-  const length = Math.max(0.42 * basis.scale, 0.22);
-  const end = start.clone().addScaledVector(basis.forward, length);
+  const anchor = getDirectionHintAnchor();
+  const scale = getDirectionHintScale();
+  const worldForward = new THREE.Vector3(0, 0, 1);
+  const worldUp = new THREE.Vector3(0, 1, 0);
+  const start = anchor.clone();
+  start.y = Math.max(0.032, start.y - 0.52 * scale);
+  start.addScaledVector(worldForward, -0.48 * scale);
+  const length = Math.max(0.72 * scale, 0.28);
+  const end = start.clone().addScaledVector(worldForward, length);
   const direction = end.clone().sub(start);
   if (direction.length() < 0.001) {
     return;
@@ -3776,8 +4053,43 @@ function renderDirectionHint() {
   shaft.renderOrder = 32;
   head.renderOrder = 33;
   directionGroup.add(shaft, head);
-  const label = MotionState.direction?.confirmed ? "角色前方" : "待确认前方";
-  labelGroup.add(makeLabel(label, end.clone().addScaledVector(basis.up, 0.11 * basis.scale).toArray(), COLORS.warn, 0.04, 0.68));
+  const label = MotionState.direction?.confirmed ? "地图前方" : "地图前方 - 先对齐模型";
+  labelGroup.add(makeLabel(label, end.clone().addScaledVector(worldUp, 0.11 * scale).toArray(), COLORS.warn, 0.04, 0.68));
+}
+
+function getDirectionHintAnchor() {
+  const hips = getJoint("Hips");
+  if (hips) {
+    return new THREE.Vector3().fromArray(hips.position);
+  }
+  const points = MotionState.source_bones
+    .map((bone) => getSourceBoneWorldPosition(bone) || bone.position)
+    .filter((position) => Array.isArray(position) && position.length === 3)
+    .map((position) => new THREE.Vector3().fromArray(position));
+  if (points.length > 0) {
+    const box = new THREE.Box3().setFromPoints(points);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    return center;
+  }
+  return new THREE.Vector3(0, 1, 0);
+}
+
+function getDirectionHintScale() {
+  if (MotionState.joints.length > 0) {
+    return getRigBasis().scale;
+  }
+  const points = MotionState.source_bones
+    .map((bone) => getSourceBoneWorldPosition(bone) || bone.position)
+    .filter((position) => Array.isArray(position) && position.length === 3)
+    .map((position) => new THREE.Vector3().fromArray(position));
+  if (points.length > 1) {
+    const box = new THREE.Box3().setFromPoints(points);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    return Math.max(size.y / 1.82, 0.05);
+  }
+  return getRigBasis().scale;
 }
 
 function renderWorldAxes() {
@@ -3799,6 +4111,7 @@ function renderWorldAxes() {
 
 function renderUi() {
   el.flowSteps.forEach((button) => button.classList.toggle("is-active", button.dataset.stage === Runtime.stage));
+  el.sceneItems.forEach((button) => button.classList.toggle("is-active", button.dataset.stage === Runtime.stage));
   el.toolButtons.forEach((button) => button.classList.toggle("is-active", button.dataset.tool === MotionState.transform.tool));
   if (el.spaceToggleButton) {
     el.spaceToggleButton.textContent = MotionState.transform.space === "local" ? "局部" : "全局";
@@ -3812,13 +4125,44 @@ function renderUi() {
   });
 
   el.statusModel.textContent = MotionState.model.loaded ? "已加载" : "无";
-  el.statusSkeleton.textContent = MotionState.skeleton?.id ? translateSkeletonId(MotionState.skeleton.id) : "缺失";
+  if (el.statusDirection) {
+    el.statusDirection.textContent = MotionState.direction?.confirmed ? "已确认" : "未确认";
+    el.statusDirection.className = MotionState.direction?.confirmed ? "ok" : "warn";
+  }
+  el.statusSkeleton.textContent = MotionState.skeleton?.id ? translateSkeletonId(MotionState.skeleton.id) : "未识别";
   el.statusIk.textContent = `${getCoreIkControls().length} 主控 + ${getJointControls().length} 调试`;
   el.statusKeyframes.textContent = `${MotionState.keyframes.length} / ${MotionState.total_frames}`;
   el.statusFrame.textContent = `${MotionState.current_frame} / ${MotionState.total_frames}`;
   el.statusDirty.textContent = MotionState.dirty_state ? "是" : "否";
   el.statusValidation.textContent = translateStatus(MotionState.validation_report.status);
   el.statusValidation.className = MotionState.validation_report.status === "Passed" ? "ok" : "warn";
+  if (el.sceneModelState) {
+    el.sceneModelState.textContent = MotionState.model.loaded ? MotionState.model.source : "未导入";
+  }
+  if (el.sceneSkeletonState) {
+    el.sceneSkeletonState.textContent = MotionState.skeleton?.id
+      ? `${translateSkeletonId(MotionState.skeleton.id)} · ${getMappingCount()} / ${HUMANOID_JOINT_NAMES.length}`
+      : "未识别";
+  }
+  if (el.sceneRigState) {
+    el.sceneRigState.textContent = MotionState.ik_controls.length > 0
+      ? `${getCoreIkControls().length} 主控`
+      : "未生成";
+  }
+  if (el.sceneMotionState) {
+    el.sceneMotionState.textContent = MotionState.keyframes.length > 0
+      ? `${MotionState.keyframes.length} 个关键帧`
+      : "无关键帧";
+  }
+  if (el.modelPanelStatus) {
+    el.modelPanelStatus.textContent = MotionState.model.loaded ? MotionState.model.source : "未导入";
+  }
+  if (el.modelPanelBoneCount) {
+    el.modelPanelBoneCount.textContent = String(MotionState.source_bones.length);
+  }
+  if (el.modelPanelType) {
+    el.modelPanelType.textContent = MotionState.model.loaded ? MotionState.model.type : "无";
+  }
 
   el.timelineKeyPoseCount.textContent = `${MotionState.keyframes.length} / ${MotionState.total_frames}`;
   el.timelineLoopState.textContent = Runtime.loop ? "开" : "关";
@@ -3843,7 +4187,7 @@ function renderUi() {
   if (el.forwardAngleInput && el.forwardAngleValue) {
     const yaw = normalizeForwardYaw(MotionState.direction?.yaw_degrees || 0);
     el.forwardAngleInput.value = String(yaw);
-    el.forwardAngleValue.textContent = `${yaw}°`;
+    el.forwardAngleValue.textContent = `${getModelFacingYawDegrees()}°`;
   }
   el.timelineFrameSlider.value = String(MotionState.current_frame);
   el.timelineCurrentFrameValue.textContent = `${MotionState.current_frame} / ${MotionState.total_frames}`;
@@ -3880,23 +4224,6 @@ function setCheckboxValue(selector, value) {
 
 function renderTimeline() {
   const keyframeByFrame = new Map(MotionState.keyframes.map((keyframe) => [keyframe.timeline_frame, keyframe]));
-  el.timelineKeyframes.innerHTML = WALK_KEY_POSES.map((pose) => {
-    const keyframe = keyframeByFrame.get(pose.timeline_frame);
-    const currentPose = Math.max(1, Math.min(8, Math.floor(((MotionState.current_frame - 1) / 3) + 1)));
-    return `
-      <button class="key-pose ${keyframe ? "has-keyframe" : ""} ${currentPose === pose.index ? "is-current" : ""} ${keyframe?.interpolation === "smooth" ? "is-smooth" : ""} ${Runtime.selectedTimelineFrames.includes(pose.timeline_frame) ? "is-selected" : ""}" data-frame="${pose.timeline_frame}">
-        <strong>姿势 ${String(pose.index).padStart(2, "0")}</strong>
-        <span>${translatePoseLabel(pose.label)}</span>
-        <span>${keyframe?.interpolation === "smooth" ? "平滑" : `时间轴 ${pose.timeline_frame}`}</span>
-      </button>
-    `;
-  }).join("");
-  el.timelineKeyframes.querySelectorAll(".key-pose").forEach((button) => {
-    button.addEventListener("click", () => {
-      markTimelineFrameSelected(Number(button.dataset.frame));
-      executeCommand(createCommand("set_current_frame", { frame: Number(button.dataset.frame) }));
-    });
-  });
   el.timelineFrameTicks.innerHTML = Array.from({ length: MotionState.total_frames }, (_, index) => {
     const frame = index + 1;
     const keyframe = keyframeByFrame.get(frame);
@@ -3906,7 +4233,44 @@ function renderTimeline() {
       </button>
     `;
   }).join("");
+  const keyPoseRow = WALK_KEY_POSES.map((pose) => {
+    const keyframe = keyframeByFrame.get(pose.timeline_frame);
+    const currentPose = Math.max(1, Math.min(8, Math.floor(((MotionState.current_frame - 1) / 3) + 1)));
+    return `
+      <button class="key-pose ${keyframe ? "has-keyframe" : ""} ${currentPose === pose.index ? "is-current" : ""} ${keyframe?.interpolation === "smooth" ? "is-smooth" : ""} ${Runtime.selectedTimelineFrames.includes(pose.timeline_frame) ? "is-selected" : ""}" data-frame="${pose.timeline_frame}" style="grid-column:${pose.timeline_frame}" title="姿势 ${String(pose.index).padStart(2, "0")} · ${translatePoseLabel(pose.label)} · 第 ${pose.timeline_frame} 帧">
+        <span>◆</span>
+      </button>
+    `;
+  }).join("");
+  const trackRows = [
+    ["全局 / 重心", ["Global_CTRL", "Root_CTRL", "COG_CTRL"]],
+    ["身体", ["Pelvis_CTRL", "Chest_CTRL", "Head_CTRL"]],
+    ["手部 IK", ["R_Hand_IK", "L_Hand_IK"]],
+    ["脚部 IK", ["R_Foot_IK", "L_Foot_IK"]],
+  ];
+  const markerRows = trackRows.map(([label, controls]) => {
+    const markers = getSortedKeyframes().map((keyframe) => {
+      const hasTrackData = keyframe.ik_controls?.some((control) => controls.includes(control.id)) || controls.includes("COG_CTRL");
+      if (!hasTrackData) return "";
+      return `
+        <button class="track-marker ${keyframe.timeline_frame === MotionState.current_frame ? "is-current" : ""} ${keyframe.interpolation === "smooth" ? "is-smooth" : ""} ${Runtime.selectedTimelineFrames.includes(keyframe.timeline_frame) ? "is-selected" : ""}" data-frame="${keyframe.timeline_frame}" style="grid-column:${keyframe.timeline_frame}" title="${label} · 第 ${keyframe.timeline_frame} 帧">
+          ◆
+        </button>
+      `;
+    }).join("");
+    return `<div class="dopesheet-row" data-track="${label}">${markers}</div>`;
+  }).join("");
+  el.timelineKeyframes.innerHTML = `
+    <div class="dopesheet-row keypose-row">${keyPoseRow}</div>
+    ${markerRows}
+  `;
   el.timelineFrameTicks.querySelectorAll(".frame-tick").forEach((button) => {
+    button.addEventListener("click", () => {
+      markTimelineFrameSelected(Number(button.dataset.frame));
+      executeCommand(createCommand("set_current_frame", { frame: Number(button.dataset.frame) }));
+    });
+  });
+  el.timelineKeyframes.querySelectorAll(".key-pose, .track-marker").forEach((button) => {
     button.addEventListener("click", () => {
       markTimelineFrameSelected(Number(button.dataset.frame));
       executeCommand(createCommand("set_current_frame", { frame: Number(button.dataset.frame) }));
@@ -4050,13 +4414,13 @@ function renderDebugPanel() {
 
 function translateStage(stage) {
   return {
-    model: "模型",
-    skeleton: "骨架",
-    mapping: "映射",
-    control_rig: "Control Rig",
+    model: "导入模型",
+    skeleton: "骨骼识别",
+    mapping: "骨骼识别",
+    control_rig: "生成 IK 控制器",
     ik: "IK 控制器",
-    motion: "动作模板",
-    validate: "验证 / 修正",
+    motion: "动作编辑",
+    validate: "验证",
     export: "导出",
   }[stage] || stage;
 }
@@ -4069,16 +4433,15 @@ function translateSkeletonId(id) {
 }
 
 function formatCharacterForwardState() {
-  const directionText = MotionState.direction?.forward_sign === -1 ? "已前后反转" : "使用当前前方";
-  const yaw = normalizeForwardYaw(MotionState.direction?.yaw_degrees || 0);
-  const angleText = yaw === 0 ? "角度 0°" : `角度 ${yaw > 0 ? "+" : ""}${yaw}°`;
-  return MotionState.direction?.confirmed ? `${directionText} / ${angleText} / 已确认` : `${directionText} / ${angleText} / 待确认`;
+  const yaw = getModelFacingYawDegrees();
+  const angleText = yaw === 0 ? "模型旋转 0°" : `模型旋转 ${yaw > 0 ? "+" : ""}${yaw}°`;
+  return MotionState.direction?.confirmed ? `${angleText} / 已确认` : `${angleText} / 待确认`;
 }
 
-function formatDirectionCommandMessage(sign, yaw, confirmed) {
-  const base = sign === 1 ? "当前前方" : "前后反转";
-  const angle = yaw === 0 ? "0°" : `${yaw > 0 ? "+" : ""}${yaw}°`;
-  return confirmed ? `已确认角色前方：${base}，角度 ${angle}` : `已调整角色前方角度：${base}，角度 ${angle}，请确认`;
+function formatDirectionCommandMessage(_sign, yaw, confirmed) {
+  const modelYaw = normalizeForwardYaw(yaw);
+  const angle = modelYaw === 0 ? "0°" : `${modelYaw > 0 ? "+" : ""}${modelYaw}°`;
+  return confirmed ? `已确认模型方向：地图前方固定，模型旋转 ${angle}` : `已调整模型方向：地图前方固定，模型旋转 ${angle}，请确认`;
 }
 
 function translateViewOption(key) {
@@ -4266,8 +4629,8 @@ function translateControlName(name) {
     Global_CTRL: "全局控制器",
     Root_CTRL: "Root 控制器",
     COG_CTRL: "重心控制器",
-    Pelvis_CTRL: "骨盆控制器",
-    Chest_CTRL: "胸腔控制器",
+    Pelvis_CTRL: "胯部控制器",
+    Chest_CTRL: "胸腰控制器",
     Head_CTRL: "头部控制器",
     R_Foot_IK: "右脚 IK",
     L_Foot_IK: "左脚 IK",

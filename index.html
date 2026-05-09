@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="./styles.css">
   <script>
     (() => {
-      if (window.location.protocol !== "file:") return;
+      if (window.location.protocol !== "file:" || navigator.userAgent.includes("Electron")) return;
 
       const localUrl = "http://localhost:8780/index.html";
 
@@ -52,41 +52,65 @@
 </head>
 <body>
   <main class="app-shell">
-    <section class="stage-panel" aria-label="动作生成视口">
-      <header class="pipeline-header">
-        <div class="brand-block">
-          <h1>动作生成流水线</h1>
-          <p>导入模型、确认骨架方向、创建控制器层、生成和微调动作</p>
-        </div>
-        <nav class="flow-steps" aria-label="流水线阶段">
-          <button class="flow-step is-active" data-stage="model"><span>1</span>模型</button>
-          <button class="flow-step" data-stage="skeleton"><span>2</span>骨架/方向</button>
-          <button class="flow-step" data-stage="mapping"><span>3</span>映射校正</button>
-          <button class="flow-step" data-stage="control_rig"><span>4</span>控制器层</button>
-          <button class="flow-step" data-stage="motion"><span>5</span>动作模板</button>
-          <button class="flow-step" data-stage="validate"><span>6</span>验证</button>
-          <button class="flow-step" data-stage="export"><span>7</span>导出</button>
-        </nav>
-        <div class="tool-strip" aria-label="动画工具">
-          <button class="tool-button is-active" data-tool="select" type="button">选择</button>
-          <button class="tool-button" data-tool="translate" type="button">移动 G</button>
-          <button class="tool-button" data-tool="rotate" type="button">旋转 R</button>
-          <button class="tool-button" data-tool="scale" type="button">缩放 S</button>
-          <button id="spaceToggleButton" type="button">全局</button>
-          <button id="snapToggleButton" type="button">吸附</button>
-          <button id="mirrorToggleButton" type="button">镜像</button>
-        </div>
-        <div class="status-strip" aria-label="流水线状态">
-          <div><span>模型</span><strong id="statusModel">无</strong></div>
-          <div><span>骨架</span><strong id="statusSkeleton">缺失</strong></div>
-          <div><span>控制器层</span><strong id="statusIk">0</strong></div>
-          <div><span>关键帧</span><strong id="statusKeyframes">0</strong></div>
-          <div><span>当前帧</span><strong id="statusFrame">1 / 24</strong></div>
-          <div><span>未保存</span><strong id="statusDirty">否</strong></div>
-          <div><span>验证</span><strong id="statusValidation">有问题</strong></div>
-        </div>
-      </header>
+    <header class="desktop-menu" aria-label="桌面菜单">
+      <div class="app-title">动作生成工作台</div>
+    </header>
 
+    <section class="workbench-toolbar" aria-label="工作台工具栏">
+      <nav class="flow-steps" aria-label="工作区">
+        <button class="work-action is-active" id="toolbarImportButton" data-stage="model" data-action="import_model" type="button">导入模型</button>
+        <button class="work-action" id="toolbarIdentifyButton" data-stage="skeleton" data-action="identify_skeleton" type="button">骨骼识别</button>
+        <button class="work-action" id="toolbarCreateIkButton" data-stage="control_rig" data-action="create_ik" type="button">生成 IK 控制器</button>
+        <button class="work-action" id="toolbarMotionButton" data-stage="motion" data-action="open_motion" type="button">动作编辑</button>
+        <button class="work-action" id="toolbarValidateButton" data-stage="validate" data-action="validate_motion" type="button">验证</button>
+        <button class="work-action" id="toolbarExportButton" data-stage="export" data-action="export_motion" type="button">导出</button>
+      </nav>
+      <div class="tool-strip" aria-label="动画工具">
+        <button class="tool-button is-active" data-tool="select" type="button">选择</button>
+        <button class="tool-button" data-tool="translate" type="button">移动 G</button>
+        <button class="tool-button" data-tool="rotate" type="button">旋转 R</button>
+        <button class="tool-button" data-tool="scale" type="button">缩放 S</button>
+        <button id="spaceToggleButton" type="button">全局</button>
+      </div>
+      <div class="status-strip" aria-label="工作状态">
+        <div><span>模型</span><strong id="statusModel">无</strong></div>
+        <div><span>方向</span><strong id="statusDirection">未确认</strong></div>
+        <div><span>骨骼</span><strong id="statusSkeleton">未识别</strong></div>
+        <div><span>IK 控制器</span><strong id="statusIk">0</strong></div>
+        <div><span>关键帧</span><strong id="statusKeyframes">0</strong></div>
+        <div><span>当前帧</span><strong id="statusFrame">1 / 24</strong></div>
+        <div><span>未保存</span><strong id="statusDirty">否</strong></div>
+        <div><span>验证</span><strong id="statusValidation">有问题</strong></div>
+      </div>
+    </section>
+
+    <aside class="scene-panel" aria-label="场景">
+      <h2>场景</h2>
+      <div class="scene-tree">
+        <button class="scene-item" data-stage="model" type="button">
+          <strong>模型</strong>
+          <span id="sceneModelState">未导入</span>
+        </button>
+        <button class="scene-item" data-stage="skeleton" type="button">
+          <strong>骨骼</strong>
+          <span id="sceneSkeletonState">未识别</span>
+        </button>
+        <button class="scene-item" data-stage="control_rig" type="button">
+          <strong>IK 控制器</strong>
+          <span id="sceneRigState">未生成</span>
+        </button>
+        <button class="scene-item" data-stage="motion" type="button">
+          <strong>动作</strong>
+          <span id="sceneMotionState">无关键帧</span>
+        </button>
+      </div>
+      <div class="scene-hint">
+        <strong>当前工作流</strong>
+        <span>导入 T-Pose GLB 后，先确认角色前方，再自动识别模型自带骨骼并生成 IK 控制器。</span>
+      </div>
+    </aside>
+
+    <section class="stage-panel" aria-label="动作生成视口">
       <div class="viewport-wrap">
         <canvas id="rigCanvas" tabindex="0" aria-label="3D 视口"></canvas>
         <div class="viewport-toggles" aria-label="显示选项">
@@ -138,13 +162,13 @@
         </div>
       </div>
 
-      <footer class="timeline-panel">
+      <footer class="timeline-panel" aria-label="动画时间轴">
         <div class="timeline-head">
-          <strong>8 姿势走路关键帧</strong>
+          <strong>动画时间轴</strong>
           <div class="timeline-metrics">
-            <span>关键姿势：<strong id="timelineKeyPoseCount">0 / 8</strong></span>
-            <span>播放帧率：<strong>24</strong></span>
-            <span>时间轴帧：<strong>1-24</strong></span>
+            <span>关键帧：<strong id="timelineKeyPoseCount">0 / 24</strong></span>
+            <span>FPS：<strong>24</strong></span>
+            <span>范围：<strong>1-24</strong></span>
             <span>循环：<strong id="timelineLoopState">开</strong></span>
           </div>
         </div>
@@ -159,19 +183,33 @@
             <strong id="timelineCurrentFrameValue">1 / 24</strong>
           </label>
         </div>
-        <div id="timelineFrameTicks" class="timeline-frame-ticks" aria-label="1 到 24 帧"></div>
-        <div id="timelineKeyframes" class="timeline-keyframes" aria-label="8 个关键姿势"></div>
+        <div class="timeline-editor">
+          <div class="timeline-track-labels" aria-hidden="true">
+            <span>帧尺</span>
+            <span>关键姿势</span>
+            <span>全局 / 重心</span>
+            <span>身体</span>
+            <span>手部 IK</span>
+            <span>脚部 IK</span>
+          </div>
+          <div class="timeline-dopesheet">
+            <div id="timelineFrameTicks" class="timeline-frame-ticks" aria-label="1 到 24 帧"></div>
+            <div id="timelineKeyframes" class="timeline-keyframes" aria-label="关键帧轨道"></div>
+          </div>
+        </div>
       </footer>
     </section>
 
-    <aside class="inspector-panel" aria-label="阶段检查器">
+    <aside class="inspector-panel" aria-label="属性检查器">
       <section class="inspector-section is-active" data-panel="model">
-        <h2>模型</h2>
-        <button id="loadTestDummyButton">加载测试假人</button>
-        <label class="file-button">
-          导入 GLB
-          <input id="modelFileInput" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json">
-        </label>
+        <h2>模型属性</h2>
+        <button id="loadTestDummyButton" class="hidden-command" type="button">加载测试假人</button>
+        <input id="modelFileInput" class="hidden-command" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json">
+        <div class="info-grid">
+          <span>模型状态</span><strong id="modelPanelStatus">未导入</strong>
+          <span>导入骨骼</span><strong id="modelPanelBoneCount">0</strong>
+          <span>文件类型</span><strong id="modelPanelType">无</strong>
+        </div>
         <label class="field-row">
           <span>模型透明度</span>
           <input id="modelOpacityInput" type="range" min="0.15" max="1" step="0.01" value="0.72">
@@ -181,29 +219,27 @@
       </section>
 
       <section class="inspector-section" data-panel="skeleton">
-        <h2>骨架 / 方向</h2>
-        <p class="stage-note">本步只确认模型骨架和黄色前方箭头。前方确认后，再进入“控制 Rig”。</p>
-        <div class="button-row">
-          <button id="createSkeletonButton">生成 Humanoid_v1</button>
-          <button id="createSourceSkeletonButton">生成参考骨架</button>
-        </div>
+        <h2>骨骼识别</h2>
+        <p class="stage-note">地图上的黄色箭头是固定前方。导入 T-Pose 模型后，用下方模型旋转按钮把角色正面对准箭头，再确认方向并点击“绑定骨骼赋值”。</p>
+        <button id="createSkeletonButton">绑定骨骼赋值</button>
+        <button id="createSourceSkeletonButton" class="hidden-command" type="button">显示源骨骼参考</button>
         <div class="mapping-summary">
           <span>导入骨骼</span><strong id="sourceBoneCountValue">0</strong>
           <span>T-Pose 基准</span><strong id="restPoseValue">未读取</strong>
           <span>映射完成</span><strong id="mappingCountValue">0 / 19</strong>
         </div>
         <div class="direction-confirm">
-          <span>角色前方</span>
-          <strong id="characterForwardValue">自动推断</strong>
-          <button id="confirmForwardButton" type="button">确认当前前方</button>
-          <button id="flipForwardButton" type="button">前后反转</button>
-          <span>角度</span>
+          <span>地图前方</span>
+          <strong id="characterForwardValue">模型待对齐</strong>
+          <button id="confirmForwardButton" type="button">确认方向</button>
+          <button id="flipForwardButton" type="button">模型转身180°</button>
+          <span>模型旋转</span>
           <label class="direction-angle">
             <input id="forwardAngleInput" type="range" min="-180" max="180" step="1" value="0">
             <strong id="forwardAngleValue">0°</strong>
           </label>
-          <button id="rotateForwardLeftButton" type="button">左转15°</button>
-          <button id="rotateForwardRightButton" type="button">右转15°</button>
+          <button id="rotateForwardLeftButton" type="button">模型左转15°</button>
+          <button id="rotateForwardRightButton" type="button">模型右转15°</button>
         </div>
         <div class="mapping-workspace" aria-label="T-Pose 骨骼映射">
           <div class="mapping-column">
@@ -229,9 +265,9 @@
       </section>
 
       <section class="inspector-section" data-panel="ik">
-        <h2>控制器层</h2>
-        <p class="stage-note">本步只创建动画师操作的控制器，不修改方向；方向需要回到“骨架/方向”确认。</p>
-        <button id="createIkButton">创建控制器层</button>
+        <h2>IK 控制器</h2>
+        <p class="stage-note">根据已识别命名的模型骨骼生成 IK 控制器。当前只控制 IK，不展开骨骼细节编辑。</p>
+        <button id="createIkButton">生成 IK 控制器</button>
         <label class="field-row compact">
           <span>选中控制器</span>
           <select id="selectedControlSelect"></select>
@@ -247,8 +283,8 @@
       </section>
 
       <section class="inspector-section" data-panel="motion">
-        <h2>动作模板</h2>
-        <button id="applyWalkButton">应用 8 姿势走路模板</button>
+        <h2>动作编辑</h2>
+        <button id="applyWalkButton">加载 Walk_8F 走路模板</button>
         <div class="button-row">
           <button id="playButton">播放</button>
           <button id="stopButton">停止</button>
@@ -261,7 +297,7 @@
       </section>
 
       <section class="inspector-section" data-panel="validate">
-        <h2>验证 / 修正</h2>
+        <h2>验证</h2>
         <button id="validateMotionButton">验证动作</button>
         <div class="validation-grid">
           <span>验证报告</span><strong id="validationSummary">未运行</strong>
@@ -274,8 +310,8 @@
 
       <section class="inspector-section" data-panel="export">
         <h2>导出</h2>
-        <button id="exportJsonButton">导出动作 JSON</button>
-        <button id="importJsonButton">导入动作 JSON</button>
+        <button id="exportJsonButton">生成 Motion JSON</button>
+        <button id="importJsonButton">导入 Motion JSON</button>
         <textarea id="motionJsonText" spellcheck="false" aria-label="动作 JSON"></textarea>
       </section>
 

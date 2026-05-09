@@ -36,7 +36,7 @@ try {
   await page.waitForSelector("#rigCanvas", { timeout: 10000 });
   await page.waitForFunction(() => Boolean(window.__motionDebug), { timeout: 10000 });
 
-  await clickAndExpect("#loadTestDummyButton", "load_test_dummy", (state) => state.model === "Loaded");
+  await executeCommandAndExpect("load_test_dummy", {}, (state) => state.model === "Loaded");
   await clickAndExpect("#createSkeletonButton", "create_humanoid_skeleton", (state) => (
     state.skeleton === "Humanoid_v1" && state.joints === 19 && state.bones === 18
   ));
@@ -63,6 +63,36 @@ try {
   }, (state) => state.selected_control === "COG_CTRL" && state.joint_rotation_overrides >= 1);
   await executeCommandAndExpect("set_control_visual_size", { size: 1.12 }, (state) => Math.abs(state.control_size - 1.12) < 0.001);
   await executeCommandAndExpect("set_control_visual_thickness", { thickness: 0.52 }, (state) => Math.abs(state.control_thickness - 0.52) < 0.001);
+  const beforePelvisControl = await page.evaluate(() => window.__motionDebug.getMotionState());
+  await executeCommandAndExpect("set_control_transform", {
+    control_id: "Pelvis_CTRL",
+    transform_mode: "rotate",
+    space: "global",
+    rotation: [0, 0.32, 0],
+  }, (state) => state.selected_control === "Pelvis_CTRL");
+  const afterPelvisControl = await page.evaluate(() => window.__motionDebug.getMotionState());
+  record("pelvis control affects lower body without dragging upper body", (
+    jointPositionDelta(beforePelvisControl, afterPelvisControl, "R_Foot") > 0.015
+    && jointPositionDelta(beforePelvisControl, afterPelvisControl, "Head") < 0.005
+  ), {
+    footDelta: jointPositionDelta(beforePelvisControl, afterPelvisControl, "R_Foot"),
+    headDelta: jointPositionDelta(beforePelvisControl, afterPelvisControl, "Head"),
+  });
+  const beforeChestControl = await page.evaluate(() => window.__motionDebug.getMotionState());
+  await executeCommandAndExpect("set_control_transform", {
+    control_id: "Chest_CTRL",
+    transform_mode: "rotate",
+    space: "global",
+    rotation: [0, 0.28, 0],
+  }, (state) => state.selected_control === "Chest_CTRL");
+  const afterChestControl = await page.evaluate(() => window.__motionDebug.getMotionState());
+  record("chest waist control affects upper body without dragging feet", (
+    jointPositionDelta(beforeChestControl, afterChestControl, "Head") > 0.015
+    && jointPositionDelta(beforeChestControl, afterChestControl, "R_Foot") < 0.005
+  ), {
+    headDelta: jointPositionDelta(beforeChestControl, afterChestControl, "Head"),
+    footDelta: jointPositionDelta(beforeChestControl, afterChestControl, "R_Foot"),
+  });
   await clickAndExpect("#applyWalkButton", "apply_motion_template", (state) => state.keyframes === 8);
 
   await ensureDom("timeline keyframes", async () => {
@@ -236,16 +266,29 @@ async function importSampleGlbAndValidateToeFallback() {
   });
   record("sample GLB has no missing required humanoid mapping", (imported.missing_required_mapping || []).length === 0, imported);
 
-  await clickAndExpect("#createSourceSkeletonButton", "create_source_skeleton_from_import", (state) => (
-    state.skeleton === "SourceRig_v1"
-    && state.current_stage === "skeleton"
-    && (state.missing_required_mapping || []).length === 0
-  ));
+  record("sample GLB source bones are visible for binding", imported.source_bones > 0 && imported.current_stage === "skeleton", imported);
 
-  await executeCommandAndExpect("set_character_direction", { forward_sign: 1, yaw_degrees: 0, confirmed: true }, (state) => (
-    state.direction?.confirmed === true
+  const importedState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const startYaw = Number(importedState.direction?.yaw_degrees || 0);
+  record("sample GLB direction starts neutral before manual alignment", angleAlmostEqual(startYaw, 0) && importedState.direction?.confirmed === false, {
+    startYaw,
+    direction: importedState.direction,
+  });
+  for (let index = 1; index <= 6; index += 1) {
+    const expectedYaw = normalizeDegrees(startYaw + index * 15);
+    await clickAndExpect("#rotateForwardRightButton", "set_character_direction", (state) => (
+      angleAlmostEqual(state.direction?.yaw_degrees, expectedYaw)
+      && state.direction?.confirmed === false
+      && state.current_stage === "skeleton"
+    ));
+  }
+  await clickAndExpect("#confirmForwardButton", "set_character_direction", (state) => (
+    angleAlmostEqual(state.direction?.yaw_degrees, normalizeDegrees(startYaw + 90))
+    && state.direction?.confirmed === true
     && state.current_stage === "skeleton"
   ));
+  const sourceRigBeforeBind = await page.evaluate(() => window.__motionDebug.getSourceRigDebug());
+  const directionArgs = await page.evaluate(() => window.__motionDebug.getMotionState().direction);
 
   await clickAndExpect("#createSkeletonButton", "create_humanoid_skeleton", (state) => (
     state.skeleton === "Humanoid_v1"
@@ -254,7 +297,19 @@ async function importSampleGlbAndValidateToeFallback() {
     && state.current_stage === "control_rig"
   ));
 
+  const sourceRigAfterBind = await page.evaluate(() => window.__motionDebug.getSourceRigDebug());
+  const bindStability = sourceRigTransformsStable(sourceRigBeforeBind, sourceRigAfterBind);
+  record("binding keeps imported source rig pose stable", bindStability.pass, bindStability);
+  record("confirmed direction uses fixed map-forward rig basis", vectorAlmostEqual(sourceRigAfterBind.basis?.forward, [0, 0, 1], 0.001), {
+    basis: sourceRigAfterBind.basis,
+    directionArgs,
+  });
   const humanoidState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const bakedHips = humanoidState.joints.find((joint) => joint.name === "Hips")?.position || null;
+  const expectedHips = sourceRigBeforeBind.mapped?.Hips?.current_world_position || null;
+  record("confirmed model direction is baked into bound skeleton", (
+    Boolean(bakedHips && expectedHips) && vecDistance(bakedHips, expectedHips) < 0.001
+  ), { bakedHips, expectedHips, directionArgs });
   const fallbackJoints = humanoidState.joints
     .filter((joint) => joint.is_optional_fallback)
     .map((joint) => joint.name);
@@ -349,6 +404,46 @@ function scaleVec(vector, scale) {
   return vector.map((value) => value * scale);
 }
 
+function rotateY(vector, degrees) {
+  const radians = (normalizeDegrees(degrees) * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const x = Number(vector[0]);
+  const y = Number(vector[1]);
+  const z = Number(vector[2]);
+  return [
+    x * cos + z * sin,
+    y,
+    -x * sin + z * cos,
+  ];
+}
+
+function normalizeDegrees(value) {
+  let degrees = Number(value) || 0;
+  while (degrees > 180) degrees -= 360;
+  while (degrees < -180) degrees += 360;
+  return degrees;
+}
+
+function angleAlmostEqual(a, b, epsilon = 0.001) {
+  return Math.abs(normalizeDegrees(Number(a) - Number(b))) < epsilon;
+}
+
+function vecDistance(a, b) {
+  return Math.hypot(Number(a[0]) - Number(b[0]), Number(a[1]) - Number(b[1]), Number(a[2]) - Number(b[2]));
+}
+
+function vectorAlmostEqual(a, b, epsilon = 0.001) {
+  return Array.isArray(a) && Array.isArray(b) && a.length === b.length
+    && a.every((value, index) => Math.abs(Number(value) - Number(b[index])) <= epsilon);
+}
+
+function jointPositionDelta(beforeState, afterState, jointName) {
+  const before = (beforeState.joints || []).find((joint) => joint.name === jointName)?.position;
+  const after = (afterState.joints || []).find((joint) => joint.name === jointName)?.position;
+  return before && after ? vecDistance(before, after) : 0;
+}
+
 function dotPlainVec(a, b) {
   return Number(a[0]) * Number(b[0]) + Number(a[1]) * Number(b[1]) + Number(a[2]) * Number(b[2]);
 }
@@ -364,6 +459,35 @@ function quaternionDelta(a, b) {
   }
   const dot = Math.abs(a.reduce((sum, value, index) => sum + Number(value) * Number(b[index]), 0));
   return 1 - Math.min(1, dot);
+}
+
+function sourceRigTransformsStable(before, after) {
+  const beforeMapped = before?.mapped || {};
+  const afterMapped = after?.mapped || {};
+  const entries = Object.keys(beforeMapped)
+    .filter((jointName) => beforeMapped[jointName]?.current_world_position && afterMapped[jointName]?.current_world_position);
+  const deltas = entries.map((jointName) => {
+    const positionDelta = vecDistance(
+      beforeMapped[jointName].current_world_position,
+      afterMapped[jointName].current_world_position,
+    );
+    const rotationDelta = quaternionDelta(
+      beforeMapped[jointName].current_world_quaternion,
+      afterMapped[jointName].current_world_quaternion,
+    );
+    return { jointName, positionDelta, rotationDelta };
+  });
+  const maxPositionDelta = Math.max(0, ...deltas.map((item) => item.positionDelta));
+  const maxRotationDelta = Math.max(0, ...deltas.map((item) => item.rotationDelta));
+  return {
+    pass: entries.length >= 10 && maxPositionDelta < 0.001 && maxRotationDelta < 0.001,
+    checked: entries.length,
+    maxPositionDelta,
+    maxRotationDelta,
+    worst: [...deltas].sort((a, b) => (
+      Math.max(b.positionDelta, b.rotationDelta) - Math.max(a.positionDelta, a.rotationDelta)
+    )).slice(0, 6),
+  };
 }
 
 function timestamp() {

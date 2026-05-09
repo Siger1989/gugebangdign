@@ -1,5 +1,41 @@
 # 动作生成流水线工具交接文档
 
+## 2026-05-09 当前交接：方向绑定修正 + EXE 输出
+
+本轮目标已经完成到可本地测试：
+
+- 导入工作流收敛为一个入口：顶部 `导入模型` 负责打开 GLB 文件选择，右侧不再重复放一个可见导入按钮。
+- 骨骼识别收敛为一个绑定动作：确认固定地图前方后，点击 `绑定骨骼赋值`。
+- 黄色箭头现在表示固定的地图前方，不再表示一个会跟着角色推断结果乱转的“角色前方”。
+- `create_humanoid_skeleton` 对导入 GLB 增加方向确认拦截：未确认方向时不允许绑定 Humanoid_v1。
+- 修复了前后方向翻转导致 `basis.right` 反转的问题。现在前后可反，左右身份不跟着交换，Walk_8F 后右手/左手 IK 保持各自侧向。
+- 添加 Electron 桌面壳：
+  - `electron-main.cjs`
+  - `npm run desktop`
+  - `npm run dist:win`
+- 已生成 Windows EXE：
+  - 单文件便携版：`release/动作生成工作台 0.1.0.exe`
+  - 目录版：`release-dir/win-unpacked/动作生成工作台.exe`
+- 用户复现“确认方向后绑定骨骼，角度又跳回去”的问题后，已追加修复：
+  - 方向调整现在直接作用到 `Runtime.importedModelScene` 本体。
+  - 绑定读取的是对齐后的源骨骼世界坐标，不再读取未旋转的原始坐标。
+  - 最新便携版输出为：`release-fixed2/动作生成工作台 0.1.0.exe`
+
+验证：
+
+- `npm run check`：PASS
+- `npm run validate:import`：PASS
+- 最新截图：`artifacts/screenshots/pipeline_acceptance_20260509_150343Z.png`
+- Electron smoke test：PASS，`electron .` 能打开 file 模式桌面窗口并加载 `#rigCanvas`。
+- 两个 EXE 都做过启动 smoke test，进程可正常保持运行。
+- 最新 `release-fixed2/动作生成工作台 0.1.0.exe` 也已做启动 smoke test。
+
+注意：
+
+- `npm run dist:win` 已生成便携 EXE，但最后清理 `release/codex-action-rig-demo-0.1.0-x64.nsis.7z` 时 Windows 报文件锁，命令返回非 0。文件本身已生成并能启动。
+- 为了获得干净的成功构建，额外运行了目录版构建：`npx electron-builder --win dir --config.directories.output=release-dir`。
+- 如果后续要推 GitHub，建议提交源码、打包配置和交接文档；`release/`、`release-dir/`、`dist/` 这类大体积产物是否入库需要先确认。
+
 ## 2026-05-09 当前交接：先暂停功能，上传当前状态
 
 当前用户要求先写交接并上传 GitHub，功能修复暂时停止在“旋转 Gizmo 手柄可选中”问题前。
@@ -442,3 +478,30 @@ npm run validate:import
 4. 把 Motion JSON 转成 glTF animation 并导出。
 5. 做项目保存/打开格式，保存映射、IK、关键帧和显示参数。
 6. 再考虑 LLM、MCP、视频动捕或复杂动作模板库。
+
+## 2026-05-09 手动方向绑定更新
+
+当前方向流程已简化：
+
+1. 导入带骨骼的 T-Pose GLB。
+2. 用模型旋转按钮把角色正面对准场景里的黄色地图前方箭头。
+3. 点击 `确认方向`。
+4. 点击 `绑定骨骼赋值`，系统只读取当前已摆正状态下的源骨骼世界坐标。
+5. 生成 IK 控制器，再加载 Walk_8F。
+
+关键变更：
+
+- GLB 导入后不再自动猜前方，默认 `yaw_degrees: 0`、`confirmed: false`。
+- `forward_sign` 固定为 `1` 以兼容旧 Motion JSON，不再作为前后翻转逻辑使用。
+- `getRigBasis()` 在确认方向后固定使用地图坐标：X=右、Y=上、Z=前。
+- 绑定时不再二次旋转、翻转或重新推断方向，避免点击绑定后模型角度跳变。
+- EXE 已接入 Electron 原生文件选择器，可以在桌面版导入 GLB。
+- 顶部无实际功能的菜单文字已移除。
+- `重心`、`胯部`、`胸腰` 控制已拆开：重心控制整体，胯部偏下半身，胸腰偏上半身。
+
+最新验证：
+
+- `npm run validate:import`: PASS
+- 截图：`artifacts/screenshots/pipeline_acceptance_20260509_171602Z.png`
+- 最新 EXE：`release-fixed5/动作生成工作台 0.1.0.exe`
+- EXE 启动烟测：PASS
