@@ -23,10 +23,10 @@
 - Walk_8F 基于已经绑定后的骨架数据生成，不再额外反向。
 - `getRigBasis()` 在确认方向后固定使用地图坐标：X=右、Y=上、Z=前。
 - `estimateHumanoidBasisFromPositions()` 在确认方向后也使用同一套固定地图基准。
-- EXE 增加 Electron 原生文件选择器：
-  - `electron-main.cjs`
-  - `electron-preload.cjs`
-  - `window.desktopBridge.openGlbFile()`
+- EXE 保留 Electron 文件 IPC，但默认导入路径改为和网页一致的 file input，避免桌面版和网页版导入行为分叉。
+- 顶部 `导入模型` 会在点击事件里立即打开文件选择器，不再先等待状态切换。
+- `refreshAlignedSourceRestCache()` 会在确认方向/绑定前记录摆正后的源骨骼 rest 世界变换。
+- IK / Walk_8F 驱动源模型骨骼时使用摆正后的 rest 变换，不再使用导入瞬间未摆正的旧方向。
 - 顶部无实际功能的 `文件 / 编辑 / 视图 / 动作 / 导出 / 帮助` 文本已移除。
 - 控制器分层：
   - `重心` 控制整体。
@@ -38,10 +38,10 @@
 - `npm run check`: PASS
 - `npm run validate:import`: PASS
 - 最新验证截图：
-  - `artifacts/screenshots/pipeline_acceptance_20260509_171602Z.png`
+  - `artifacts/screenshots/pipeline_acceptance_20260509_174335Z.png`
 - EXE 启动测试：PASS
 - 最新 EXE：
-  - `release-fixed5/动作生成工作台 0.1.0.exe`
+  - `release-fixed6/动作生成工作台 0.1.0.exe`
 
 ## 需要继续注意
 

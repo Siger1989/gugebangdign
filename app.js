@@ -666,7 +666,7 @@ async function handleWorkbenchAction(button) {
   const action = button.dataset.action;
   const stage = button.dataset.stage;
   if (action === "import_model") {
-    await executeCommand(createCommand("set_stage", { stage: "model" }));
+    void executeCommand(createCommand("set_stage", { stage: "model" }));
     await openModelFilePicker();
     return;
   }
@@ -691,16 +691,23 @@ async function handleWorkbenchAction(button) {
 }
 
 async function openModelFilePicker() {
-  if (window.desktopBridge?.openGlbFile) {
-    const desktopFile = await window.desktopBridge.openGlbFile();
-    if (!desktopFile) {
-      return;
-    }
-    const file = createFileFromDesktopSelection(desktopFile);
-    await executeCommand(createCommand("import_glb", { file }));
+  triggerFileInputPicker();
+}
+
+function triggerFileInputPicker() {
+  const input = document.querySelector("#modelFileInput");
+  if (!input) {
     return;
   }
-  document.querySelector("#modelFileInput")?.click();
+  if (typeof input.showPicker === "function") {
+    try {
+      input.showPicker();
+      return;
+    } catch (error) {
+      console.warn("showPicker failed, falling back to input.click().", error);
+    }
+  }
+  input.click();
 }
 
 function createFileFromDesktopSelection(desktopFile) {
@@ -859,6 +866,7 @@ const COMMAND_EXECUTORS = {
     MotionState.joint_rotations = {};
     MotionState.direction = { forward_sign: 1, yaw_degrees: 0, confirmed: false };
     applyImportedModelAlignment();
+    refreshAlignedSourceRestCache();
     MotionState.selected_source_bone_id = MotionState.source_bones[0]?.id || null;
     MotionState.import_diagnostics = {
       ...importDiagnostics,
@@ -981,6 +989,7 @@ const COMMAND_EXECUTORS = {
       throw new Error("请先把模型正面对齐地图黄色前方箭头，并点击“确认方向”，再绑定骨骼赋值。");
     }
     applyImportedModelAlignment();
+    refreshAlignedSourceRestCache();
     const { joints, bones } = createHumanoidSkeletonData();
     const mappedCount = getMappingCount();
     MotionState.skeleton = {
@@ -1404,6 +1413,7 @@ const COMMAND_EXECUTORS = {
     const yaw = normalizeForwardYaw(yaw_degrees);
     MotionState.direction = { forward_sign: sign, yaw_degrees: yaw, confirmed: Boolean(confirmed) };
     applyImportedModelAlignment();
+    refreshAlignedSourceRestCache();
     if (MotionState.skeleton?.id === "Humanoid_v1") {
       rebuildHumanoidSkeletonFromMapping();
       syncSourceRigToMotionState();
@@ -2622,6 +2632,46 @@ function resetRuntimeSourceBonesToRest() {
   return true;
 }
 
+function refreshAlignedSourceRestCache() {
+  if (!Runtime.importedModelScene || Runtime.sourceBoneRestById.size === 0) {
+    return false;
+  }
+  Runtime.sourceBoneRestById.forEach((rest, id) => {
+    const bone = Runtime.sourceBoneById.get(id);
+    if (!bone) {
+      return;
+    }
+    bone.position.copy(rest.localPosition);
+    bone.quaternion.copy(rest.localQuaternion);
+    bone.scale.copy(rest.localScale);
+  });
+  Runtime.importedModelScene.updateMatrixWorld(true);
+  Runtime.sourceBoneRestById.forEach((rest, id) => {
+    const bone = Runtime.sourceBoneById.get(id);
+    if (!bone) {
+      return;
+    }
+    const worldPosition = new THREE.Vector3();
+    const worldQuaternion = new THREE.Quaternion();
+    const worldScale = new THREE.Vector3();
+    bone.getWorldPosition(worldPosition);
+    bone.getWorldQuaternion(worldQuaternion);
+    bone.getWorldScale(worldScale);
+    rest.alignedWorldPosition = worldPosition;
+    rest.alignedWorldQuaternion = worldQuaternion;
+    rest.alignedWorldScale = worldScale;
+  });
+  return true;
+}
+
+function getSourceRestWorldPosition(rest) {
+  return (rest?.alignedWorldPosition || rest?.worldPosition || new THREE.Vector3()).clone();
+}
+
+function getSourceRestWorldQuaternion(rest) {
+  return (rest?.alignedWorldQuaternion || rest?.worldQuaternion || new THREE.Quaternion()).clone();
+}
+
 function getSourceBoneWorldPosition(sourceBoneOrId) {
   const sourceId = typeof sourceBoneOrId === "string" ? sourceBoneOrId : sourceBoneOrId?.id;
   const bone = sourceId ? Runtime.sourceBoneById.get(sourceId) : null;
@@ -2694,7 +2744,7 @@ function driveMappedSourceRigFromJoints(joints) {
     if (!parentBone || !parentRest || !childRest || !targetParent || !targetChild) {
       return;
     }
-    const restDir = childRest.worldPosition.clone().sub(parentRest.worldPosition);
+    const restDir = getSourceRestWorldPosition(childRest).sub(getSourceRestWorldPosition(parentRest));
     const targetDir = new THREE.Vector3().fromArray(targetChild.position).sub(new THREE.Vector3().fromArray(targetParent.position));
     if (restDir.length() < 0.001 || targetDir.length() < 0.001) {
       return;
@@ -2702,7 +2752,7 @@ function driveMappedSourceRigFromJoints(joints) {
     restDir.normalize();
     targetDir.normalize();
     const deltaQuaternion = new THREE.Quaternion().setFromUnitVectors(restDir, targetDir);
-    const desiredWorldQuaternion = withExplicitJointRotation(parentName, deltaQuaternion.multiply(parentRest.worldQuaternion));
+    const desiredWorldQuaternion = withExplicitJointRotation(parentName, deltaQuaternion.multiply(getSourceRestWorldQuaternion(parentRest)));
     if (MotionState.joint_rotations?.[parentName]) {
       explicitlyApplied.add(parentName);
     }
@@ -2718,7 +2768,7 @@ function driveMappedSourceRigFromJoints(joints) {
     if (!bone || !rest || !explicit) {
       return;
     }
-    setSourceBoneWorldQuaternion(bone, explicit.clone().multiply(rest.worldQuaternion).normalize());
+    setSourceBoneWorldQuaternion(bone, explicit.clone().multiply(getSourceRestWorldQuaternion(rest)).normalize());
   });
   Runtime.importedModelScene?.updateMatrixWorld(true);
   return true;
@@ -5860,9 +5910,11 @@ function getSourceRigDebug() {
     mapped[jointName] = {
       source_bone_id: sourceId,
       source_bone_name: sourceBone?.name || null,
-      rest_world_position: rest?.worldPosition?.toArray?.() || null,
+      rest_world_position: rest ? getSourceRestWorldPosition(rest).toArray() : null,
+      original_rest_world_position: rest?.worldPosition?.toArray?.() || null,
       current_world_position: currentPosition?.toArray?.() || null,
-      rest_world_quaternion: rest?.worldQuaternion?.toArray?.() || null,
+      rest_world_quaternion: rest ? getSourceRestWorldQuaternion(rest).toArray() : null,
+      original_rest_world_quaternion: rest?.worldQuaternion?.toArray?.() || null,
       current_world_quaternion: currentQuaternion?.toArray?.() || null,
       local_position: liveBone?.position?.toArray?.() || null,
       local_quaternion: liveBone?.quaternion?.toArray?.() || null,

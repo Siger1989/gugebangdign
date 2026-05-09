@@ -1,5 +1,61 @@
 # CURRENT_STATE
 
+## EXE Import And Aligned Source Rest Fix - 2026-05-10
+
+Current objective:
+- Fix the user-reported EXE import button not responding and the IK/walk direction using a reversed or crooked source rig basis after manual direction alignment.
+
+Current progress:
+- Changed the top `导入模型` button so it opens the file picker immediately in the click event instead of awaiting `set_stage` first.
+- Default import now uses the same file-input path in browser and Electron, avoiding separate web/EXE import behavior.
+- Added a safe `showPicker()` fallback to `input.click()`.
+- Added `refreshAlignedSourceRestCache()`:
+  - resets imported source bones to their local rest pose
+  - reads their world transforms after the user's confirmed model yaw is applied
+  - stores `alignedWorldPosition` / `alignedWorldQuaternion`
+- `driveMappedSourceRigFromJoints()` now uses the aligned source rest transforms, not the original unrotated GLB import transforms.
+- `getSourceRigDebug()` now exposes both aligned and original rest transforms so direction cache issues are visible.
+- Validation now checks:
+  - clicking top `导入模型` opens a file chooser
+  - confirmed direction refreshes source rest cache
+  - after Walk_8F, the real source rig hands stay on their own sides
+
+Files changed:
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run validate:import`
+- Electron source smoke: click top import, file chooser opens, sample GLB imports.
+- `npx electron-builder --win portable --config.directories.output=release-fixed6 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- Start-process smoke test for `release-fixed6\动作生成工作台 0.1.0.exe`
+
+Validation result: PASS
+
+Validation details:
+- `npm run validate:import`: PASS.
+- Latest screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_174335Z.png`
+- Manual diagnostic screenshot:
+  - `artifacts/screenshots/manual_direction_rest_cache_fix.png`
+- Electron source import smoke:
+  - file chooser opened: true
+  - imported sample model source bones: 39
+  - humanoid mapping: 17, optional toes fallback
+- Latest EXE:
+  - `release-fixed6\动作生成工作台 0.1.0.exe`
+- EXE smoke:
+  - PASS. Process stayed alive after 8 seconds.
+
+Current blocking issue:
+- None for import trigger and aligned source rest cache.
+
+Next step:
+- User manual check in `release-fixed6`.
+
 ## Confirmed Direction Drives Binding And Walk Basis - 2026-05-09
 
 Current objective:

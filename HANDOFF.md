@@ -505,3 +505,36 @@ npm run validate:import
 - 截图：`artifacts/screenshots/pipeline_acceptance_20260509_171602Z.png`
 - 最新 EXE：`release-fixed5/动作生成工作台 0.1.0.exe`
 - EXE 启动烟测：PASS
+
+## 2026-05-10 EXE 导入和 IK 方向修复
+
+用户反馈：
+
+- EXE 内点击 `导入模型` 没反应。
+- 手动调整方向后，点击 `绑定骨骼赋值`，中轴仍然歪。
+- 生成 IK 后不光歪，而且前后/左右像是反的。
+
+原因：
+
+- 顶部 `导入模型` 之前先 `await set_stage`，再触发文件选择；Electron/Chromium 可能因此丢失用户激活，隐藏文件 input 不弹。
+- 绑定读取的是用户摆正后的源骨骼世界坐标，但 IK 驱动源模型骨骼时仍使用导入瞬间未摆正的源骨骼 rest 世界变换。
+- 这导致“绑定坐标系”和“驱动模型骨骼坐标系”不一致，Walk_8F / IK 会出现扭、歪、反。
+
+修复：
+
+- `导入模型` 按钮现在在点击事件中立即打开 file input。
+- 网页和 EXE 默认使用同一条 file input 导入路径。
+- 新增 `refreshAlignedSourceRestCache()`，在确认方向/绑定前缓存摆正后的源骨骼 rest 世界坐标和四元数。
+- `driveMappedSourceRigFromJoints()` 使用 aligned rest 变换，不再用原始未旋转 GLB rest 变换。
+- 验证脚本新增：
+  - 顶部导入按钮能打开文件选择器。
+  - 确认方向后源骨骼 rest 缓存和当前姿态一致。
+  - Walk_8F 后真实源骨骼双手仍在各自左右侧。
+
+最新验证：
+
+- `npm run validate:import`: PASS
+- 截图：`artifacts/screenshots/pipeline_acceptance_20260509_174335Z.png`
+- 诊断截图：`artifacts/screenshots/manual_direction_rest_cache_fix.png`
+- 最新 EXE：`release-fixed6/动作生成工作台 0.1.0.exe`
+- EXE 启动烟测：PASS

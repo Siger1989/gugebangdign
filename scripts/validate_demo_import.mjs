@@ -252,7 +252,10 @@ async function keyboardRotateSelectedControlAndExpect(controlId) {
 
 async function importSampleGlbAndValidateToeFallback() {
   const beforeCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
-  await page.locator("#modelFileInput").setInputFiles(sampleGlbPath);
+  const fileChooserPromise = page.waitForEvent("filechooser", { timeout: 10000 });
+  await page.locator("#toolbarImportButton").click();
+  const fileChooser = await fileChooserPromise;
+  await fileChooser.setFiles(sampleGlbPath);
   await page.waitForFunction((count) => {
     const log = window.__motionDebug?.getCommandLog?.() || [];
     return log.slice(count).some((entry) => entry.name === "import_glb");
@@ -289,6 +292,10 @@ async function importSampleGlbAndValidateToeFallback() {
   ));
   const sourceRigBeforeBind = await page.evaluate(() => window.__motionDebug.getSourceRigDebug());
   const directionArgs = await page.evaluate(() => window.__motionDebug.getMotionState().direction);
+  record("confirmed direction refreshes source rest cache", sourceRigRestMatchesCurrent(sourceRigBeforeBind), {
+    hips: sourceRigBeforeBind.mapped?.Hips,
+    rightHand: sourceRigBeforeBind.mapped?.R_Hand,
+  });
 
   await clickAndExpect("#createSkeletonButton", "create_humanoid_skeleton", (state) => (
     state.skeleton === "Humanoid_v1"
@@ -346,6 +353,11 @@ async function importSampleGlbAndValidateToeFallback() {
   record("sample GLB walk keeps hands on their own sides", walkHandsStayOnOwnSides(importedWalkState), {
     keyframes: importedWalkState.keyframes?.length,
   });
+  const sourceRigAfterWalk = await page.evaluate(() => window.__motionDebug.getSourceRigDebug());
+  record("sample GLB source rig keeps hands on their own sides after walk", sourceRigHandsStayOnOwnSides(sourceRigAfterWalk), {
+    rightHand: sourceRigAfterWalk.mapped?.R_Hand?.current_world_position,
+    leftHand: sourceRigAfterWalk.mapped?.L_Hand?.current_world_position,
+  });
 }
 
 async function ensureDom(label, fn) {
@@ -390,6 +402,31 @@ function walkHandsStayOnOwnSides(payload) {
     return dotPlainVec(subPlainVec(rightHandTarget, center), sideAxis) > 0.02
       && dotPlainVec(subPlainVec(leftHandTarget, center), sideAxis) < -0.02;
   });
+}
+
+function sourceRigHandsStayOnOwnSides(debugPayload) {
+  const mapped = debugPayload?.mapped || {};
+  const rightShoulder = mapped.R_UpperArm?.current_world_position;
+  const leftShoulder = mapped.L_UpperArm?.current_world_position;
+  const rightHand = mapped.R_Hand?.current_world_position;
+  const leftHand = mapped.L_Hand?.current_world_position;
+  if (!rightShoulder || !leftShoulder || !rightHand || !leftHand) {
+    return false;
+  }
+  const center = scaleVec(addPlainVec(rightShoulder, leftShoulder), 0.5);
+  const sideAxis = normalizePlainVec(subPlainVec(rightShoulder, leftShoulder));
+  return dotPlainVec(subPlainVec(rightHand, center), sideAxis) > 0.02
+    && dotPlainVec(subPlainVec(leftHand, center), sideAxis) < -0.02;
+}
+
+function sourceRigRestMatchesCurrent(debugPayload) {
+  const mapped = debugPayload?.mapped || {};
+  const joints = ["Hips", "Spine", "Chest", "Head", "R_Hand", "L_Hand", "R_Foot", "L_Foot"]
+    .filter((name) => mapped[name]?.rest_world_position && mapped[name]?.current_world_position);
+  if (joints.length < 6) {
+    return false;
+  }
+  return joints.every((name) => vecDistance(mapped[name].rest_world_position, mapped[name].current_world_position) < 0.001);
 }
 
 function addPlainVec(a, b) {
