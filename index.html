@@ -59,17 +59,27 @@
           <p>命令接口驱动的人形骨架 v1 动作闭环</p>
         </div>
         <nav class="flow-steps" aria-label="流水线阶段">
-          <button class="flow-step is-active" data-stage="model"><span>1</span>模型</button>
-          <button class="flow-step" data-stage="skeleton"><span>2</span>骨架</button>
-          <button class="flow-step" data-stage="ik"><span>3</span>IK 控制器</button>
-          <button class="flow-step" data-stage="motion"><span>4</span>动作模板</button>
-          <button class="flow-step" data-stage="validate"><span>5</span>验证 / 修正</button>
-          <button class="flow-step" data-stage="export"><span>6</span>导出</button>
+          <button class="flow-step is-active" data-stage="model"><span>1</span>Model</button>
+          <button class="flow-step" data-stage="skeleton"><span>2</span>Skeleton</button>
+          <button class="flow-step" data-stage="mapping"><span>3</span>Mapping</button>
+          <button class="flow-step" data-stage="control_rig"><span>4</span>Control Rig</button>
+          <button class="flow-step" data-stage="motion"><span>5</span>Motion Template</button>
+          <button class="flow-step" data-stage="validate"><span>6</span>Validate</button>
+          <button class="flow-step" data-stage="export"><span>7</span>Export</button>
         </nav>
+        <div class="tool-strip" aria-label="动画工具">
+          <button class="tool-button is-active" data-tool="select" type="button">Select</button>
+          <button class="tool-button" data-tool="translate" type="button">Move G</button>
+          <button class="tool-button" data-tool="rotate" type="button">Rotate R</button>
+          <button class="tool-button" data-tool="scale" type="button">Scale S</button>
+          <button id="spaceToggleButton" type="button">Global</button>
+          <button id="snapToggleButton" type="button">Snap</button>
+          <button id="mirrorToggleButton" type="button">Mirror</button>
+        </div>
         <div class="status-strip" aria-label="流水线状态">
           <div><span>模型</span><strong id="statusModel">无</strong></div>
           <div><span>骨架</span><strong id="statusSkeleton">缺失</strong></div>
-          <div><span>IK 控制器</span><strong id="statusIk">0</strong></div>
+          <div><span>Control Rig</span><strong id="statusIk">0</strong></div>
           <div><span>关键帧</span><strong id="statusKeyframes">0</strong></div>
           <div><span>当前帧</span><strong id="statusFrame">1 / 24</strong></div>
           <div><span>未保存</span><strong id="statusDirty">否</strong></div>
@@ -80,13 +90,17 @@
       <div class="viewport-wrap">
         <canvas id="rigCanvas" tabindex="0" aria-label="3D 视口"></canvas>
         <div class="viewport-toggles" aria-label="显示选项">
-          <label><input id="showSkeletonLabels" type="checkbox"> 骨架标签</label>
-          <label><input id="showIkControls" type="checkbox" checked> IK 控制器</label>
-          <label><input id="showBoneColors" type="checkbox" checked> 骨骼颜色</label>
-          <label><input id="showFootLocks" type="checkbox" checked> 脚底锁定</label>
-          <label><input id="showMotionPaths" type="checkbox" checked> 运动路径</label>
-          <label><input id="showGroundPlane" type="checkbox" checked> 地面</label>
-          <label><input id="showValidationIssues" type="checkbox" checked> 验证问题</label>
+          <label><input id="showModel" type="checkbox" checked> Model</label>
+          <label><input id="showDeformSkeleton" type="checkbox" checked> Deform Skeleton</label>
+          <label><input id="showControlRig" type="checkbox" checked> Control Rig</label>
+          <label><input id="showIkControls" type="checkbox" checked> IK Controls</label>
+          <label><input id="showJointDebugControls" type="checkbox"> Joint Debug</label>
+          <label><input id="showLabels" type="checkbox" checked> Labels</label>
+          <label><input id="showTransformGizmo" type="checkbox" checked> Transform Gizmo</label>
+          <label><input id="showMotionPaths" type="checkbox" checked> Motion Path</label>
+          <label><input id="showFootLocks" type="checkbox" checked> Foot Locks</label>
+          <label><input id="showGroundPlane" type="checkbox" checked> Ground</label>
+          <label><input id="showValidationIssues" type="checkbox" checked> Validation</label>
         </div>
         <div class="viewport-opacity-controls" aria-label="视图透明度控制">
           <label>
@@ -204,8 +218,8 @@
       </section>
 
       <section class="inspector-section" data-panel="ik">
-        <h2>IK 控制器</h2>
-        <button id="createIkButton">创建 IK 控制器</button>
+        <h2>Control Rig</h2>
+        <button id="createIkButton">创建 Control Rig</button>
         <label class="field-row compact">
           <span>选中控制器</span>
           <select id="selectedControlSelect"></select>

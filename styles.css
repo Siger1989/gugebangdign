@@ -143,7 +143,7 @@ button:disabled {
 
 .flow-steps {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 5px;
 }
 
@@ -179,6 +179,25 @@ button:disabled {
 .flow-step.is-active span {
   background: var(--accent);
   color: #15111f;
+}
+
+.tool-strip {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, auto));
+  gap: 5px;
+  align-items: center;
+}
+
+.tool-strip button {
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 11px;
+}
+
+.tool-strip button.is-active {
+  border-color: var(--accent);
+  background: rgba(184, 148, 255, 0.18);
 }
 
 .status-strip {

@@ -23,12 +23,13 @@ const modelGroup = new THREE.Group();
 const sourceSkeletonGroup = new THREE.Group();
 const skeletonGroup = new THREE.Group();
 const ikGroup = new THREE.Group();
+const gizmoGroup = new THREE.Group();
 const pathGroup = new THREE.Group();
 const directionGroup = new THREE.Group();
 const labelGroup = new THREE.Group();
 const validationGroup = new THREE.Group();
 scene.add(root);
-root.add(modelGroup, sourceSkeletonGroup, skeletonGroup, ikGroup, pathGroup, directionGroup, labelGroup, validationGroup);
+root.add(modelGroup, sourceSkeletonGroup, skeletonGroup, ikGroup, gizmoGroup, pathGroup, directionGroup, labelGroup, validationGroup);
 
 const hemi = new THREE.HemisphereLight(0xffffff, 0x2a3442, 1.55);
 scene.add(hemi);
@@ -149,7 +150,12 @@ const HUMANOID_MAPPING_ALIASES = {
 };
 
 const CORE_IK_CONTROL_DEFS = [
+  { id: "Global_CTRL", type: "global", joint: "Hips", side: "Center", allow_scale: true },
+  { id: "Root_CTRL", type: "root", joint: "Hips", side: "Center", allow_scale: true },
+  { id: "COG_CTRL", type: "cog", joint: "Hips", side: "Center" },
   { id: "Pelvis_CTRL", type: "pelvis", joint: "Hips", side: "Center" },
+  { id: "Chest_CTRL", type: "chest", joint: "Chest", side: "Center" },
+  { id: "Head_CTRL", type: "head", joint: "Head", side: "Center" },
   { id: "R_Foot_IK", type: "foot", joint: "R_Foot", side: "R" },
   { id: "L_Foot_IK", type: "foot", joint: "L_Foot", side: "L" },
   { id: "R_Hand_IK", type: "hand", joint: "R_Hand", side: "R" },
@@ -189,6 +195,19 @@ const COMMAND_SCHEMAS = {
   create_source_skeleton_from_import: { type: "object", properties: { mode: { const: "visual_overlay_tpose" } } },
   create_ik_controls: { type: "object", properties: { rig: { const: "Humanoid_v1" } } },
   apply_motion_template: { type: "object", properties: { template_id: { enum: ["walk_cycle_8f"] } }, required: ["template_id"] },
+  set_control_transform: {
+    type: "object",
+    properties: {
+      control_id: { type: "string" },
+      transform_mode: { enum: ["translate", "rotate", "scale"] },
+      space: { enum: ["local", "global"] },
+      position: { type: "array", minItems: 3, maxItems: 3 },
+      rotation: { type: "array", minItems: 3, maxItems: 3 },
+      scale: { type: "array", minItems: 3, maxItems: 3 },
+      frame: { type: "number" },
+      insert_keyframe: { type: "boolean" },
+    },
+  },
   set_ik_target: { type: "object", properties: { control_id: { type: "string" }, position: { type: "array", minItems: 3, maxItems: 3 } } },
   set_joint_position: { type: "object", properties: { joint: { type: "string" }, position: { type: "array", minItems: 3, maxItems: 3 } } },
   rotate_joint_branch: { type: "object", properties: { joint: { type: "string" }, angle: { type: "number" }, axis: { type: "array", minItems: 3, maxItems: 3 } } },
@@ -209,7 +228,7 @@ const COMMAND_SCHEMAS = {
   set_model_opacity: { type: "object", properties: { opacity: { type: "number" } } },
   set_skeleton_opacity: { type: "object", properties: { opacity: { type: "number" } } },
   set_control_opacity: { type: "object", properties: { opacity: { type: "number" } } },
-  set_stage: { type: "object", properties: { stage: { enum: ["model", "skeleton", "ik", "motion", "validate", "export"] } } },
+  set_stage: { type: "object", properties: { stage: { enum: ["model", "skeleton", "mapping", "control_rig", "ik", "motion", "validate", "export"] } } },
   set_current_frame: { type: "object", properties: { frame: { type: "number" } } },
   set_view_option: { type: "object", properties: { key: { type: "string" }, value: { type: "boolean" } } },
   reset_view: { type: "object", properties: {} },
@@ -236,6 +255,13 @@ const MotionState = {
   selected_bone: null,
   selected_source_bone_id: null,
   selected_control: null,
+  transform: {
+    tool: "select",
+    space: "global",
+    axis: null,
+    snap: false,
+    mirror: false,
+  },
   command_log: [],
   undo_stack: [],
   redo_stack: [],
@@ -247,8 +273,14 @@ const MotionState = {
     controls: 0.32,
   },
   show: {
-    skeleton_labels: false,
+    model: true,
+    deform_skeleton: true,
+    control_rig: true,
     ik_controls: true,
+    joint_debug_controls: false,
+    labels: true,
+    transform_gizmo: true,
+    skeleton_labels: false,
     bone_colors: true,
     foot_locks: true,
     motion_paths: true,
@@ -298,6 +330,10 @@ const Runtime = {
 
 const el = {
   flowSteps: [...document.querySelectorAll(".flow-step")],
+  toolButtons: [...document.querySelectorAll(".tool-button")],
+  spaceToggleButton: document.querySelector("#spaceToggleButton"),
+  snapToggleButton: document.querySelector("#snapToggleButton"),
+  mirrorToggleButton: document.querySelector("#mirrorToggleButton"),
   panels: [...document.querySelectorAll(".inspector-section")],
   statusModel: document.querySelector("#statusModel"),
   statusSkeleton: document.querySelector("#statusSkeleton"),
@@ -377,6 +413,21 @@ function bindUi() {
   el.flowSteps.forEach((button) => {
     button.addEventListener("click", () => executeCommand(createCommand("set_stage", { stage: button.dataset.stage })));
   });
+  el.toolButtons.forEach((button) => {
+    button.addEventListener("click", () => setTransformTool(button.dataset.tool));
+  });
+  el.spaceToggleButton?.addEventListener("click", () => {
+    MotionState.transform.space = MotionState.transform.space === "local" ? "global" : "local";
+    renderAll();
+  });
+  el.snapToggleButton?.addEventListener("click", () => {
+    MotionState.transform.snap = !MotionState.transform.snap;
+    renderAll();
+  });
+  el.mirrorToggleButton?.addEventListener("click", () => {
+    MotionState.transform.mirror = !MotionState.transform.mirror;
+    renderAll();
+  });
 
   document.querySelector("#loadTestDummyButton").addEventListener("click", () => {
     executeCommand(createCommand("load_test_dummy"));
@@ -428,8 +479,11 @@ function bindUi() {
     executeCommand(createCommand("apply_motion_template", { template_id: "walk_cycle_8f" }));
   });
   document.querySelector("#setIkTargetButton").addEventListener("click", () => {
-    executeCommand(createCommand("set_ik_target", {
+    const control = MotionState.ik_controls.find((item) => item.id === MotionState.selected_control);
+    executeCommand(createCommand(control?.is_joint_control ? "set_ik_target" : "set_control_transform", {
       control_id: MotionState.selected_control,
+      transform_mode: "translate",
+      space: MotionState.transform.space,
       position: [Number(el.ikTargetX.value), Number(el.ikTargetY.value), Number(el.ikTargetZ.value)],
     }));
   });
@@ -539,9 +593,13 @@ function bindUi() {
   });
 
   [
-    ["#showSkeletonLabels", "skeleton_labels"],
+    ["#showModel", "model"],
+    ["#showDeformSkeleton", "deform_skeleton"],
+    ["#showControlRig", "control_rig"],
     ["#showIkControls", "ik_controls"],
-    ["#showBoneColors", "bone_colors"],
+    ["#showJointDebugControls", "joint_debug_controls"],
+    ["#showLabels", "labels"],
+    ["#showTransformGizmo", "transform_gizmo"],
     ["#showFootLocks", "foot_locks"],
     ["#showMotionPaths", "motion_paths"],
     ["#showGroundPlane", "ground_plane"],
@@ -569,6 +627,13 @@ function adjustForwardYaw(deltaDegrees) {
   }));
 }
 
+function setTransformTool(tool) {
+  const nextTool = ["select", "translate", "rotate", "scale"].includes(tool) ? tool : "select";
+  MotionState.transform.tool = nextTool;
+  MotionState.transform.axis = null;
+  renderAll();
+}
+
 function createCommand(name, args = {}, options = {}) {
   return {
     name,
@@ -580,6 +645,35 @@ function createCommand(name, args = {}, options = {}) {
     result: null,
     error: null,
   };
+}
+
+function normalizeVec3(value, fallback = [0, 0, 0], min = -Infinity, max = Infinity) {
+  const source = Array.isArray(value) && value.length === 3 ? value : fallback;
+  return source.map((item, index) => {
+    const number = Number(item);
+    const safe = Number.isFinite(number) ? number : Number(fallback[index] || 0);
+    return Math.max(min, Math.min(max, safe));
+  });
+}
+
+function upsertManualKeyframe(frame) {
+  const targetFrame = clampFrame(Number(frame) || MotionState.current_frame);
+  const poseIndex = Math.max(1, Math.min(8, Math.round(((targetFrame - 1) / MotionState.total_frames) * 8) + 1));
+  const keyframe = {
+    pose_index: poseIndex,
+    timeline_frame: targetFrame,
+    label: "MANUAL",
+    joints: deepClone(MotionState.joints),
+    joint_rotations: deepClone(MotionState.joint_rotations),
+    ik_controls: deepClone(MotionState.ik_controls),
+    foot_locks: inferFootLocksFromControls(),
+    interpolation: "linear",
+  };
+  MotionState.keyframes = MotionState.keyframes.filter((item) => item.timeline_frame !== targetFrame);
+  MotionState.keyframes.push(keyframe);
+  MotionState.keyframes.sort((a, b) => a.timeline_frame - b.timeline_frame);
+  markTimelineFrameSelected(targetFrame);
+  return targetFrame;
 }
 
 async function executeCommand(command) {
@@ -864,7 +958,7 @@ const COMMAND_EXECUTORS = {
     MotionState.dirty_state = true;
     Runtime.stage = "motion";
     return {
-      message: `已创建 ${CORE_IK_CONTROL_COUNT} 个 IK 控制器和 ${JOINT_CONTROL_DEFS.length} 个关节控制器`,
+      message: `已创建 ${CORE_IK_CONTROL_COUNT} 个 Control Rig 控制器和 ${JOINT_CONTROL_DEFS.length} 个 Joint Debug 控制器`,
       count: MotionState.ik_controls.length,
       core_ik: CORE_IK_CONTROL_COUNT,
       joint_controls: JOINT_CONTROL_DEFS.length,
@@ -898,14 +992,74 @@ const COMMAND_EXECUTORS = {
     if (!control) {
       throw new Error(`未找到 IK 控制器：${control_id || "无"}`);
     }
+    const previousControl = deepClone(control);
     control.position = position.map(Number);
-    applyControlToJoint(control);
+    applyControlToJoint(control, previousControl);
     MotionState.selected_control = control.id;
     if (control.target_joint) {
       MotionState.selected_bone = getBoneNameForJoint(control.target_joint) || MotionState.selected_bone;
     }
     MotionState.dirty_state = true;
     return { message: `已设置 ${control.id} 目标`, position: control.position };
+  },
+
+  set_control_transform: async ({
+    control_id,
+    transform_mode,
+    space = MotionState.transform.space || "global",
+    position,
+    rotation,
+    scale,
+    frame,
+    insert_keyframe = false,
+  }) => {
+    requireIkControls();
+    const control = MotionState.ik_controls.find((item) => item.id === control_id);
+    if (!control) {
+      throw new Error(`未找到 Control Rig 控制器：${control_id || "无"}`);
+    }
+    if (control.is_joint_control) {
+      throw new Error("set_control_transform 只允许修改 Control Rig 控制器；普通关节 Debug 控制器不能走这个命令");
+    }
+    const mode = ["translate", "rotate", "scale"].includes(transform_mode) ? transform_mode : "translate";
+    const previousControl = deepClone(control);
+    if (mode === "translate" && position) {
+      control.position = normalizeVec3(position, control.position);
+    }
+    if (mode === "rotate" && rotation) {
+      control.rotation = normalizeVec3(rotation, control.rotation || [0, 0, 0]);
+    }
+    if (mode === "scale" && scale) {
+      if (!control.allow_scale) {
+        throw new Error(`${translateControlName(control.id)} 不允许缩放`);
+      }
+      control.scale = normalizeVec3(scale, control.scale || [1, 1, 1], 0.05, 20);
+    }
+    MotionState.transform.space = space === "local" ? "local" : "global";
+    MotionState.transform.tool = mode;
+    applyControlToJoint(control, previousControl);
+    MotionState.ik_controls = syncIkControlsToJoints(MotionState.ik_controls);
+    const synced = MotionState.ik_controls.find((item) => item.id === control.id);
+    if (synced) {
+      synced.rotation = control.rotation || synced.rotation || [0, 0, 0];
+      synced.scale = control.scale || synced.scale || [1, 1, 1];
+    }
+    MotionState.selected_control = control.id;
+    MotionState.selected_bone = getBoneNameForJoint(control.target_joint) || MotionState.selected_bone;
+    MotionState.validation_report = createEmptyValidationReport();
+    if (insert_keyframe) {
+      upsertManualKeyframe(frame || MotionState.current_frame);
+    }
+    MotionState.dirty_state = true;
+    return {
+      message: `已变换 ${translateControlName(control.id)}`,
+      control_id: control.id,
+      transform_mode: mode,
+      space: MotionState.transform.space,
+      position: synced?.position || control.position,
+      rotation: synced?.rotation || control.rotation || [0, 0, 0],
+      scale: synced?.scale || control.scale || [1, 1, 1],
+    };
   },
 
   set_joint_position: async ({ joint, position }) => {
@@ -965,22 +1119,7 @@ const COMMAND_EXECUTORS = {
 
   insert_keyframe: async ({ frame }) => {
     requireSkeleton();
-    const targetFrame = clampFrame(Number(frame) || MotionState.current_frame);
-    const poseIndex = Math.max(1, Math.min(8, Math.round(((targetFrame - 1) / MotionState.total_frames) * 8) + 1));
-    const keyframe = {
-      pose_index: poseIndex,
-      timeline_frame: targetFrame,
-      label: "MANUAL",
-      joints: deepClone(MotionState.joints),
-      joint_rotations: deepClone(MotionState.joint_rotations),
-      ik_controls: deepClone(MotionState.ik_controls),
-      foot_locks: inferFootLocksFromControls(),
-      interpolation: "linear",
-    };
-    MotionState.keyframes = MotionState.keyframes.filter((item) => item.timeline_frame !== targetFrame);
-    MotionState.keyframes.push(keyframe);
-    MotionState.keyframes.sort((a, b) => a.timeline_frame - b.timeline_frame);
-    markTimelineFrameSelected(targetFrame);
+    const targetFrame = upsertManualKeyframe(frame || MotionState.current_frame);
     MotionState.dirty_state = true;
     return { message: `已在第 ${targetFrame} 帧插入关键帧`, frame: targetFrame };
   },
@@ -1226,6 +1365,7 @@ function isUndoableCommand(name) {
     "create_source_skeleton_from_import",
     "create_ik_controls",
     "apply_motion_template",
+    "set_control_transform",
     "set_ik_target",
     "set_joint_position",
     "rotate_joint_branch",
@@ -1260,6 +1400,7 @@ function snapshotCoreState() {
     selected_bone: MotionState.selected_bone,
     selected_source_bone_id: MotionState.selected_source_bone_id,
     selected_control: MotionState.selected_control,
+    transform: MotionState.transform,
     validation_report: MotionState.validation_report,
     dirty_state: MotionState.dirty_state,
     exported_json: MotionState.exported_json,
@@ -1773,20 +1914,92 @@ function getJointPositionFromList(joints, name) {
 
 function createWalk8FKeyframes() {
   const basis = getRigBasis();
-  return WALK_KEY_POSES.map((pose) => {
-    const offsets = makeWalkPoseOffsets(pose.params, basis);
-    const joints = applyOffsetsToRest(offsets, basis);
-    return {
+  const snapshot = snapshotCoreState();
+  const frames = [];
+  WALK_KEY_POSES.forEach((pose) => {
+    restoreCoreState(snapshot);
+    MotionState.joints = deepClone(MotionState.skeleton?.rest_joints || MotionState.joints);
+    MotionState.joint_rotations = {};
+    MotionState.ik_controls = createIkControlsFromCurrentSkeleton();
+    applyWalkControlsToRig(pose.params, pose.index, basis);
+    frames.push({
       pose_index: pose.index,
       timeline_frame: pose.timeline_frame,
       label: pose.label,
-      joints,
-      joint_rotations: {},
-      ik_controls: createControlsForPose(joints, pose.params.lock),
+      joints: deepClone(MotionState.joints),
+      joint_rotations: deepClone(MotionState.joint_rotations),
+      ik_controls: deepClone(MotionState.ik_controls),
       foot_locks: pose.params.lock,
       template_id: "walk_cycle_8f",
-    };
+    });
   });
+  restoreCoreState(snapshot);
+  return frames;
+}
+
+function applyWalkControlsToRig(params, poseIndex, basis = getRigBasis()) {
+  const baseControls = new Map(MotionState.ik_controls.map((control) => [control.id, deepClone(control)]));
+  const phase = Math.sign((params.rFootZ || 0) - (params.lFootZ || 0)) || (poseIndex <= 4 ? 1 : -1);
+  const hipY = (params.hipY || 0) * basis.scale;
+  const sideShift = -phase * 0.035 * basis.scale;
+  setRigControlPosition("COG_CTRL", new THREE.Vector3().fromArray(baseControls.get("COG_CTRL").position)
+    .addScaledVector(basis.up, hipY)
+    .addScaledVector(basis.right, sideShift)
+    .toArray());
+  setRigControlPosition("Pelvis_CTRL", new THREE.Vector3().fromArray(baseControls.get("Pelvis_CTRL").position)
+    .addScaledVector(basis.up, hipY * 0.35)
+    .addScaledVector(basis.right, sideShift * 0.35)
+    .toArray());
+  setRigControlRotation("Pelvis_CTRL", [phase * 0.035, phase * 0.085, -phase * 0.045]);
+  setRigControlRotation("Chest_CTRL", [-phase * 0.018, -phase * 0.06, phase * 0.024]);
+  setRigControlRotation("Head_CTRL", [0, -phase * 0.018, 0]);
+  setLimbIkControl("R_Foot_IK", baseControls, basis, params.rFootZ || 0, params.rFootY || 0, Boolean(params.lock?.R));
+  setLimbIkControl("L_Foot_IK", baseControls, basis, params.lFootZ || 0, params.lFootY || 0, Boolean(params.lock?.L));
+  setLimbIkControl("R_Hand_IK", baseControls, basis, params.rHandZ || 0, -0.025, false);
+  setLimbIkControl("L_Hand_IK", baseControls, basis, params.lHandZ || 0, -0.025, false);
+}
+
+function setLimbIkControl(controlId, baseControls, basis, forwardOffset, upOffset, locked) {
+  const base = baseControls.get(controlId);
+  if (!base) {
+    return;
+  }
+  const position = new THREE.Vector3().fromArray(base.position)
+    .addScaledVector(basis.forward, forwardOffset * basis.scale)
+    .addScaledVector(basis.up, upOffset * basis.scale)
+    .toArray();
+  setRigControlPosition(controlId, position, locked);
+}
+
+function setRigControlPosition(controlId, position, locked = false) {
+  const control = MotionState.ik_controls.find((item) => item.id === controlId);
+  if (!control) {
+    return;
+  }
+  const previous = deepClone(control);
+  control.position = position;
+  control.locked = locked;
+  applyControlToJoint(control, previous);
+  MotionState.ik_controls = syncIkControlsToJoints(MotionState.ik_controls);
+  const synced = MotionState.ik_controls.find((item) => item.id === controlId);
+  if (synced) {
+    synced.locked = locked;
+  }
+}
+
+function setRigControlRotation(controlId, rotation) {
+  const control = MotionState.ik_controls.find((item) => item.id === controlId);
+  if (!control) {
+    return;
+  }
+  const previous = deepClone(control);
+  control.rotation = rotation;
+  applyControlToJoint(control, previous);
+  MotionState.ik_controls = syncIkControlsToJoints(MotionState.ik_controls);
+  const synced = MotionState.ik_controls.find((item) => item.id === controlId);
+  if (synced) {
+    synced.rotation = rotation;
+  }
 }
 
 function makeWalkPoseOffsets(params, basis = getRigBasis()) {
@@ -1833,14 +2046,17 @@ function createControlsForPose(joints, locks = {}) {
   const basis = getRigBasis();
   return IK_CONTROL_DEFS.map((def) => {
     const joint = jointMap.get(def.joint);
-    const offset = getIkControlWorldOffset(def, basis);
     return {
       id: def.id,
       type: def.type,
       side: def.side,
       target_joint: def.joint,
       is_joint_control: Boolean(def.is_joint_control),
-      position: addVec(joint.position, offset),
+      control_role: def.is_joint_control ? "joint_debug" : "control_rig",
+      allow_scale: Boolean(def.allow_scale),
+      position: getControlPositionForDef(def, joint, basis),
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
       locked: def.id === "R_Foot_IK" ? Boolean(locks.R) : def.id === "L_Foot_IK" ? Boolean(locks.L) : false,
     };
   });
@@ -1850,17 +2066,50 @@ function createIkControlsFromCurrentSkeleton() {
   const basis = getRigBasis();
   return IK_CONTROL_DEFS.map((def) => {
     const joint = getJoint(def.joint);
-    const offset = getIkControlWorldOffset(def, basis);
     return {
       id: def.id,
       type: def.type,
       side: def.side,
       target_joint: def.joint,
       is_joint_control: Boolean(def.is_joint_control),
-      position: addVec(joint.position, offset),
+      control_role: def.is_joint_control ? "joint_debug" : "control_rig",
+      allow_scale: Boolean(def.allow_scale),
+      position: getControlPositionForDef(def, joint, basis),
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
       locked: false,
     };
   });
+}
+
+function getControlPositionForDef(def, joint, basis = getRigBasis()) {
+  if (!joint) {
+    return [0, 0, 0];
+  }
+  const jointVec = new THREE.Vector3().fromArray(joint.position);
+  const hips = getJoint("Hips") ? new THREE.Vector3().fromArray(getJoint("Hips").position) : getRestVector("Hips");
+  const rightFoot = getJoint("R_Foot") ? new THREE.Vector3().fromArray(getJoint("R_Foot").position) : getRestVector("R_Foot");
+  const leftFoot = getJoint("L_Foot") ? new THREE.Vector3().fromArray(getJoint("L_Foot").position) : getRestVector("L_Foot");
+  const footY = Math.min(rightFoot.y, leftFoot.y, jointVec.y);
+  if (def.id === "Global_CTRL") {
+    return new THREE.Vector3(hips.x, footY - basis.scale * 0.045, hips.z).toArray();
+  }
+  if (def.id === "Root_CTRL") {
+    return new THREE.Vector3(hips.x, footY + basis.scale * 0.025, hips.z).addScaledVector(basis.forward, -0.08 * basis.scale).toArray();
+  }
+  if (def.id === "COG_CTRL") {
+    return jointVec.clone().addScaledVector(basis.up, 0.11 * basis.scale).toArray();
+  }
+  if (def.id === "Pelvis_CTRL") {
+    return jointVec.clone().addScaledVector(basis.up, 0.035 * basis.scale).toArray();
+  }
+  if (def.id === "Chest_CTRL") {
+    return jointVec.clone().addScaledVector(basis.up, 0.015 * basis.scale).toArray();
+  }
+  if (def.id === "Head_CTRL") {
+    return jointVec.clone().addScaledVector(basis.up, 0.035 * basis.scale).toArray();
+  }
+  return addVec(joint.position, getIkControlWorldOffset(def, basis));
 }
 
 function getRestPosition(name) {
@@ -2256,12 +2505,51 @@ function interpolateNamedArrays(a, b, t, key = "name") {
     return {
       ...deepClone(item),
       position: lerpVec(item.position, other.position, t),
+      rotation: item.rotation || other.rotation ? lerpVec(item.rotation || [0, 0, 0], other.rotation || [0, 0, 0], t) : item.rotation,
+      scale: item.scale || other.scale ? lerpVec(item.scale || [1, 1, 1], other.scale || [1, 1, 1], t) : item.scale,
       locked: item.locked || other.locked || false,
     };
   });
 }
 
-function applyControlToJoint(control) {
+function getControlRotationQuaternion(control) {
+  const rotation = normalizeVec3(control?.rotation || [0, 0, 0], [0, 0, 0]);
+  return new THREE.Quaternion().setFromEuler(new THREE.Euler(rotation[0], rotation[1], rotation[2], "XYZ"));
+}
+
+function getControlScaleFactor(control, previousControl) {
+  const current = normalizeVec3(control?.scale || [1, 1, 1], [1, 1, 1], 0.05, 20);
+  const previous = normalizeVec3(previousControl?.scale || [1, 1, 1], [1, 1, 1], 0.05, 20);
+  const currentAverage = (current[0] + current[1] + current[2]) / 3;
+  const previousAverage = Math.max((previous[0] + previous[1] + previous[2]) / 3, 0.0001);
+  return currentAverage / previousAverage;
+}
+
+function rotateJointBranchByQuaternion(jointName, quaternion) {
+  const joint = getJoint(jointName);
+  if (!joint || !quaternion) {
+    return false;
+  }
+  const normalized = quaternion.clone().normalize();
+  if (EXPLICIT_ROTATION_JOINTS.has(jointName)) {
+    accumulateJointRotation(jointName, normalized);
+  }
+  const pivot = new THREE.Vector3().fromArray(joint.position);
+  getJointBranchNames(jointName)
+    .filter((name) => name !== jointName)
+    .forEach((name) => {
+      const item = getJoint(name);
+      if (!item) {
+        return;
+      }
+      const point = new THREE.Vector3().fromArray(item.position).sub(pivot).applyQuaternion(normalized).add(pivot);
+      item.position = point.toArray();
+    });
+  driveMappedSourceRigFromJoints(MotionState.joints);
+  return true;
+}
+
+function applyControlToJoint(control, previousControl = null) {
   const joint = getJoint(control.target_joint);
   if (!joint) {
     return;
@@ -2277,8 +2565,37 @@ function applyControlToJoint(control) {
     driveMappedSourceRigFromJoints(MotionState.joints);
     return;
   }
+  if (["global", "root", "cog"].includes(control.type)) {
+    const previousPosition = previousControl?.position || getControlPositionForDef(getControlDef(control.id), joint);
+    const delta = subtractVec(control.position, previousPosition);
+    translateSkeletonBy(delta);
+    if (control.allow_scale && previousControl && control.scale) {
+      const scaleFactor = getControlScaleFactor(control, previousControl);
+      if (Math.abs(scaleFactor - 1) > 0.0001) {
+        scaleJointBranch("Hips", scaleFactor);
+      }
+    }
+    driveMappedSourceRigFromJoints(MotionState.joints);
+    return;
+  }
+  if (["pelvis", "chest", "head"].includes(control.type)) {
+    const previousRotation = getControlRotationQuaternion(previousControl || { rotation: [0, 0, 0] });
+    const nextRotation = getControlRotationQuaternion(control);
+    const deltaRotation = nextRotation.clone().multiply(previousRotation.clone().invert()).normalize();
+    if (!isIdentityQuaternion(deltaRotation)) {
+      rotateJointBranchByQuaternion(control.target_joint, deltaRotation);
+    }
+    driveMappedSourceRigFromJoints(MotionState.joints);
+    return;
+  }
   if (control.type === "hand") {
     solveTwoBoneIk(control.side, `${control.side}_UpperArm`, `${control.side}_Forearm`, `${control.side}_Hand`, control.position, `${control.side}_Elbow_Pole`);
+    const previousRotation = getControlRotationQuaternion(previousControl || { rotation: [0, 0, 0] });
+    const nextRotation = getControlRotationQuaternion(control);
+    const deltaRotation = nextRotation.clone().multiply(previousRotation.clone().invert()).normalize();
+    if (!isIdentityQuaternion(deltaRotation)) {
+      accumulateJointRotation(control.target_joint, deltaRotation);
+    }
   } else if (control.type === "foot") {
     solveTwoBoneIk(control.side, `${control.side}_UpperLeg`, `${control.side}_LowerLeg`, `${control.side}_Foot`, control.position, `${control.side}_Knee_Pole`);
     const toe = getJoint(`${control.side}_Toe`);
@@ -2288,15 +2605,12 @@ function applyControlToJoint(control) {
       const restFoot = getRestVector(`${control.side}_Foot`);
       toe.position = addVec(foot.position, restToe.sub(restFoot).toArray());
     }
-  } else if (control.type === "pelvis") {
-    const delta = subtractVec(control.position, joint.position);
-    translateSkeletonBy(delta);
-    MotionState.ik_controls = MotionState.ik_controls.map((item) => (
-      item.id === control.id ? { ...item, position: [...control.position] } : { ...item, position: addVec(item.position, delta) }
-    ));
-    control.position = [...control.position];
-    driveMappedSourceRigFromJoints(MotionState.joints);
-    return;
+    const previousRotation = getControlRotationQuaternion(previousControl || { rotation: [0, 0, 0] });
+    const nextRotation = getControlRotationQuaternion(control);
+    const deltaRotation = nextRotation.clone().multiply(previousRotation.clone().invert()).normalize();
+    if (!isIdentityQuaternion(deltaRotation)) {
+      accumulateJointRotation(control.target_joint, deltaRotation);
+    }
   }
   control.position = [...control.position];
   driveMappedSourceRigFromJoints(MotionState.joints);
@@ -2399,27 +2713,8 @@ function moveJointBranch(jointName, targetPosition) {
 }
 
 function rotateJointBranch(jointName, angle, axis) {
-  const joint = getJoint(jointName);
-  if (!joint) {
-    return false;
-  }
-  const pivot = new THREE.Vector3().fromArray(joint.position);
   const quaternion = new THREE.Quaternion().setFromAxisAngle(axis.clone().normalize(), angle);
-  if (EXPLICIT_ROTATION_JOINTS.has(jointName)) {
-    accumulateJointRotation(jointName, quaternion);
-  }
-  getJointBranchNames(jointName)
-    .filter((name) => name !== jointName)
-    .forEach((name) => {
-      const item = getJoint(name);
-      if (!item) {
-        return;
-      }
-      const point = new THREE.Vector3().fromArray(item.position).sub(pivot).applyQuaternion(quaternion).add(pivot);
-      item.position = point.toArray();
-    });
-  driveMappedSourceRigFromJoints(MotionState.joints);
-  return true;
+  return rotateJointBranchByQuaternion(jointName, quaternion);
 }
 
 function scaleJointBranch(jointName, scale) {
@@ -2488,9 +2783,18 @@ function syncIkControlsToJoints(controls) {
     if (!def || !joint) {
       return control;
     }
+    if (control.type === "pole") {
+      return {
+        ...control,
+        rotation: control.rotation || [0, 0, 0],
+        scale: control.scale || [1, 1, 1],
+      };
+    }
     return {
       ...control,
-      position: addVec(joint.position, getIkControlWorldOffset(def, basis)),
+      position: getControlPositionForDef(def, joint, basis),
+      rotation: control.rotation || [0, 0, 0],
+      scale: control.scale || [1, 1, 1],
     };
   });
 }
@@ -2703,6 +3007,7 @@ function renderSceneObjects() {
   clearGroup(sourceSkeletonGroup);
   clearGroup(skeletonGroup);
   clearGroup(ikGroup);
+  clearGroup(gizmoGroup);
   clearGroup(pathGroup);
   clearGroup(directionGroup);
   clearGroup(labelGroup);
@@ -2716,12 +3021,13 @@ function renderSceneObjects() {
   renderSkeleton();
   renderDirectionHint();
   renderIkControls();
+  renderTransformGizmo();
   renderMotionPaths();
   renderValidationIssues();
 }
 
 function renderModel() {
-  if (!MotionState.model.loaded) {
+  if (!MotionState.show.model || !MotionState.model.loaded) {
     return;
   }
   if (MotionState.model.type === "glb_reference" && Runtime.importedModelScene) {
@@ -2755,7 +3061,7 @@ function renderModel() {
 }
 
 function renderSourceSkeletonOverlay() {
-  if (MotionState.source_bones.length === 0 || !MotionState.show.bone_colors) {
+  if (!MotionState.show.deform_skeleton || MotionState.source_bones.length === 0) {
     return;
   }
   const sourceById = new Map(MotionState.source_bones.map((bone) => [bone.id, bone]));
@@ -2773,16 +3079,16 @@ function renderSourceSkeletonOverlay() {
       const parentPosition = getSourceBoneWorldPosition(parent) || parent.position;
       sourceSkeletonGroup.add(createSourceBoneMesh(parentPosition, bonePosition, color, visualScale));
     }
-    if (mappedJoint && MotionState.show.skeleton_labels) {
+    if (mappedJoint && MotionState.show.labels && isSourceBoneSelected(bone.id)) {
       labelGroup.add(makeLabel(translateBoneName(mappedJoint), addVec(bonePosition, [visualScale * 1.55, visualScale * 0.8, 0]), color, 0.028, 0.58));
-    } else if (MotionState.show.skeleton_labels && bone.length > visualScale * 3) {
+    } else if (MotionState.show.labels && isSourceBoneSelected(bone.id) && bone.length > visualScale * 3) {
       labelGroup.add(makeLabel(bone.name, bonePosition, color, 0.034, 0.52));
     }
   });
 }
 
 function renderSkeleton() {
-  if (!MotionState.skeleton) {
+  if (!MotionState.show.deform_skeleton || !MotionState.skeleton) {
     return;
   }
   MotionState.bones.forEach((bone) => {
@@ -2794,13 +3100,26 @@ function renderSkeleton() {
     const color = MotionState.show.bone_colors ? getSideColor(bone.side) : COLORS.neutral;
     skeletonGroup.add(createBoneMesh(start.position, end.position, color));
   });
-  MotionState.joints.forEach((joint) => {
-    const color = MotionState.show.bone_colors ? getSideColor(joint.side) : COLORS.neutral;
-    skeletonGroup.add(createHumanoidJointControl(joint, color));
-    if (MotionState.show.skeleton_labels) {
-      labelGroup.add(makeLabel(formatJointName(joint), joint.position, color, 0.046, 0.58));
-    }
-  });
+  if (MotionState.show.joint_debug_controls) {
+    MotionState.joints.forEach((joint) => {
+      const color = MotionState.show.bone_colors ? getSideColor(joint.side) : COLORS.neutral;
+      skeletonGroup.add(createHumanoidJointControl(joint, color));
+      if (MotionState.show.labels && isJointSelected(joint.name)) {
+        labelGroup.add(makeLabel(formatJointName(joint), joint.position, color, 0.046, 0.58));
+      }
+    });
+  } else {
+    MotionState.joints.forEach((joint) => {
+      if (isJointSelected(joint.name)) {
+        const color = MotionState.show.bone_colors ? getSideColor(joint.side) : COLORS.neutral;
+        skeletonGroup.add(createHumanoidJointControl(joint, color));
+      }
+    });
+  }
+}
+
+function isSourceBoneSelected(sourceBoneId) {
+  return MotionState.selected_source_bone_id === sourceBoneId;
 }
 
 function createHumanoidJointControl(joint, color) {
@@ -2877,7 +3196,7 @@ function isJointSelected(jointName) {
 }
 
 function renderIkControls() {
-  if (!MotionState.show.ik_controls) {
+  if (!MotionState.show.control_rig) {
     return;
   }
   MotionState.ik_controls.filter(shouldRenderIkControl).forEach((control) => {
@@ -2909,9 +3228,12 @@ function renderIkControls() {
 
 function shouldRenderIkControl(control) {
   if (!control?.is_joint_control) {
+    if (["hand", "foot", "pole"].includes(control.type) && !MotionState.show.ik_controls) {
+      return false;
+    }
     return true;
   }
-  return MotionState.selected_control === control.id;
+  return MotionState.show.joint_debug_controls || MotionState.selected_control === control.id;
 }
 
 function shouldPickIkControl(control) {
@@ -2919,14 +3241,19 @@ function shouldPickIkControl(control) {
 }
 
 function shouldRenderIkControlLabel(control) {
-  return !control.is_joint_control
+  return MotionState.show.labels && (!control.is_joint_control
     || MotionState.selected_control === control.id
     || Runtime.hoveredControlId === control.id
-    || MotionState.show.skeleton_labels;
+    || MotionState.show.joint_debug_controls);
 }
 
 function getIkControlLabel(control) {
+  if (control.id === "Global_CTRL") return "全局";
+  if (control.id === "Root_CTRL") return "Root";
+  if (control.id === "COG_CTRL") return "重心";
   if (control.id === "Pelvis_CTRL") return "腰";
+  if (control.id === "Chest_CTRL") return "胸";
+  if (control.id === "Head_CTRL") return "头";
   if (control.id === "R_Hand_IK") return "右手";
   if (control.id === "L_Hand_IK") return "左手";
   if (control.id === "R_Foot_IK") return "右脚";
@@ -2977,6 +3304,43 @@ function createControlMesh(control, color) {
     return group;
   }
   alignGroupToRigBasis(group);
+  const controlScale = normalizeVec3(control.scale || [1, 1, 1], [1, 1, 1], 0.05, 20);
+  group.scale.set(controlScale[0], controlScale[1], controlScale[2]);
+  if (control.type === "global") {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.008, 8, 96), wire);
+    ring.rotation.x = Math.PI / 2;
+    const crossA = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.006, 0.006), wire.clone());
+    const crossB = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.006, 0.74), wire.clone());
+    ring.userData = group.userData;
+    crossA.userData = group.userData;
+    crossB.userData = group.userData;
+    group.add(ring, crossA, crossB);
+    addControlHitArea(group, 0.46);
+    return group;
+  }
+  if (control.type === "root") {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.006, 8, 64), wire);
+    ring.rotation.x = Math.PI / 2;
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.012, 0.18), wire.clone());
+    ring.userData = group.userData;
+    box.userData = group.userData;
+    group.add(ring, box);
+    addControlHitArea(group, 0.23);
+    return group;
+  }
+  if (control.type === "cog") {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.008, 8, 72), wire);
+    ring.rotation.y = Math.PI / 2;
+    const ringSide = new THREE.Mesh(new THREE.TorusGeometry(0.135, 0.005, 8, 48), wire.clone());
+    ringSide.rotation.x = Math.PI / 2;
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.035, 16, 10), solid.clone());
+    ring.userData = group.userData;
+    ringSide.userData = group.userData;
+    core.userData = group.userData;
+    group.add(ring, ringSide, core);
+    addControlHitArea(group, 0.22);
+    return group;
+  }
   if (control.type === "pelvis") {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.007, 8, 56), wire);
     ring.rotation.x = Math.PI / 2;
@@ -2987,6 +3351,29 @@ function createControlMesh(control, color) {
     core.userData = group.userData;
     group.add(ring, belt, core);
     addControlHitArea(group, 0.19);
+    return group;
+  }
+  if (control.type === "chest") {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.006, 8, 64), wire);
+    ring.rotation.y = Math.PI / 2;
+    const lean = new THREE.Mesh(new THREE.TorusGeometry(0.108, 0.004, 8, 44), wire.clone());
+    lean.rotation.x = Math.PI / 2;
+    ring.userData = group.userData;
+    lean.userData = group.userData;
+    group.add(ring, lean);
+    addControlHitArea(group, 0.2);
+    return group;
+  }
+  if (control.type === "head") {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.105, 0.005, 8, 48), wire);
+    ring.rotation.y = Math.PI / 2;
+    const aim = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.065, 16), solid.clone());
+    aim.rotation.x = Math.PI / 2;
+    aim.position.z = 0.08;
+    ring.userData = group.userData;
+    aim.userData = group.userData;
+    group.add(ring, aim);
+    addControlHitArea(group, 0.15);
     return group;
   }
   if (control.type === "foot") {
@@ -3047,6 +3434,66 @@ function addControlHitArea(group, radius) {
   group.add(hit);
 }
 
+function renderTransformGizmo() {
+  if (!MotionState.show.transform_gizmo || !MotionState.selected_control || !MotionState.show.control_rig) {
+    return;
+  }
+  const control = MotionState.ik_controls.find((item) => item.id === MotionState.selected_control && !item.is_joint_control);
+  if (!control) {
+    return;
+  }
+  const basis = getRigBasis();
+  const position = new THREE.Vector3().fromArray(control.position);
+  const size = Math.max(0.18 * basis.scale, 0.12);
+  const mode = Runtime.transformMode || MotionState.transform.tool || "translate";
+  const axes = [
+    { key: "x", color: 0xff4242, vector: MotionState.transform.space === "local" ? basis.right : new THREE.Vector3(1, 0, 0), label: "X" },
+    { key: "y", color: 0x49e85f, vector: MotionState.transform.space === "local" ? basis.up : new THREE.Vector3(0, 1, 0), label: "Y" },
+    { key: "z", color: 0x3d6dff, vector: MotionState.transform.space === "local" ? basis.forward : new THREE.Vector3(0, 0, 1), label: "Z" },
+  ];
+  axes.forEach((axis) => {
+    if (mode === "rotate") {
+      gizmoGroup.add(createGizmoRing(position, axis.vector, size * 0.88, axis.color));
+    } else if (mode === "scale") {
+      gizmoGroup.add(createGizmoScaleAxis(position, axis.vector, size, axis.color));
+    } else {
+      gizmoGroup.add(createGizmoTranslateAxis(position, axis.vector, size, axis.color));
+    }
+  });
+}
+
+function createGizmoTranslateAxis(origin, axis, length, color) {
+  const group = new THREE.Group();
+  const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthTest: false });
+  const direction = axis.clone().normalize();
+  const rotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, length, 8), material);
+  shaft.quaternion.copy(rotation);
+  shaft.position.copy(origin).addScaledVector(direction, length * 0.5);
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.026, 0.075, 14), material.clone());
+  head.quaternion.copy(rotation);
+  head.position.copy(origin).addScaledVector(direction, length);
+  group.add(shaft, head);
+  return group;
+}
+
+function createGizmoScaleAxis(origin, axis, length, color) {
+  const group = createGizmoTranslateAxis(origin, axis, length * 0.82, color);
+  const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthTest: false });
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.04), material);
+  box.position.copy(origin).addScaledVector(axis.clone().normalize(), length * 0.92);
+  group.add(box);
+  return group;
+}
+
+function createGizmoRing(origin, axis, radius, color) {
+  const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.82, depthTest: false });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.004, 8, 72), material);
+  ring.position.copy(origin);
+  ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis.clone().normalize());
+  return ring;
+}
+
 function renderMotionPaths() {
   if (!MotionState.show.motion_paths || MotionState.keyframes.length === 0) {
     return;
@@ -3083,7 +3530,7 @@ function renderValidationIssues() {
 }
 
 function renderDirectionHint() {
-  if (!MotionState.skeleton || MotionState.joints.length === 0) {
+  if (!["skeleton", "mapping"].includes(Runtime.stage) || !MotionState.skeleton || MotionState.joints.length === 0) {
     return;
   }
   const hips = getJoint("Hips") || MotionState.joints[0];
@@ -3117,11 +3564,21 @@ function renderDirectionHint() {
 
 function renderUi() {
   el.flowSteps.forEach((button) => button.classList.toggle("is-active", button.dataset.stage === Runtime.stage));
-  el.panels.forEach((panel) => panel.classList.toggle("is-active", panel.dataset.panel === Runtime.stage));
+  el.toolButtons.forEach((button) => button.classList.toggle("is-active", button.dataset.tool === MotionState.transform.tool));
+  if (el.spaceToggleButton) {
+    el.spaceToggleButton.textContent = MotionState.transform.space === "local" ? "Local" : "Global";
+    el.spaceToggleButton.classList.toggle("is-active", MotionState.transform.space === "local");
+  }
+  el.snapToggleButton?.classList.toggle("is-active", MotionState.transform.snap);
+  el.mirrorToggleButton?.classList.toggle("is-active", MotionState.transform.mirror);
+  el.panels.forEach((panel) => {
+    const activePanel = Runtime.stage === "mapping" ? "skeleton" : Runtime.stage === "control_rig" ? "ik" : Runtime.stage;
+    panel.classList.toggle("is-active", panel.dataset.panel === activePanel);
+  });
 
   el.statusModel.textContent = MotionState.model.loaded ? "已加载" : "无";
   el.statusSkeleton.textContent = MotionState.skeleton?.id ? translateSkeletonId(MotionState.skeleton.id) : "缺失";
-  el.statusIk.textContent = `${getCoreIkControls().length} IK + ${getJointControls().length} 关节`;
+  el.statusIk.textContent = `${getCoreIkControls().length} Rig + ${getJointControls().length} Debug`;
   el.statusKeyframes.textContent = `${MotionState.keyframes.length} / ${MotionState.total_frames}`;
   el.statusFrame.textContent = `${MotionState.current_frame} / ${MotionState.total_frames}`;
   el.statusDirty.textContent = MotionState.dirty_state ? "是" : "否";
@@ -3147,13 +3604,17 @@ function renderUi() {
   }
   el.timelineFrameSlider.value = String(MotionState.current_frame);
   el.timelineCurrentFrameValue.textContent = `${MotionState.current_frame} / ${MotionState.total_frames}`;
-  document.querySelector("#showSkeletonLabels").checked = MotionState.show.skeleton_labels;
-  document.querySelector("#showIkControls").checked = MotionState.show.ik_controls;
-  document.querySelector("#showBoneColors").checked = MotionState.show.bone_colors;
-  document.querySelector("#showFootLocks").checked = MotionState.show.foot_locks;
-  document.querySelector("#showMotionPaths").checked = MotionState.show.motion_paths;
-  document.querySelector("#showGroundPlane").checked = MotionState.show.ground_plane;
-  document.querySelector("#showValidationIssues").checked = MotionState.show.validation_issues;
+  setCheckboxValue("#showModel", MotionState.show.model);
+  setCheckboxValue("#showDeformSkeleton", MotionState.show.deform_skeleton);
+  setCheckboxValue("#showControlRig", MotionState.show.control_rig);
+  setCheckboxValue("#showIkControls", MotionState.show.ik_controls);
+  setCheckboxValue("#showJointDebugControls", MotionState.show.joint_debug_controls);
+  setCheckboxValue("#showLabels", MotionState.show.labels);
+  setCheckboxValue("#showTransformGizmo", MotionState.show.transform_gizmo);
+  setCheckboxValue("#showFootLocks", MotionState.show.foot_locks);
+  setCheckboxValue("#showMotionPaths", MotionState.show.motion_paths);
+  setCheckboxValue("#showGroundPlane", MotionState.show.ground_plane);
+  setCheckboxValue("#showValidationIssues", MotionState.show.validation_issues);
 
   renderTimeline();
   renderMappingPanel();
@@ -3164,6 +3625,13 @@ function renderUi() {
   renderDebugPanel();
   if (MotionState.exported_json && document.activeElement !== el.motionJsonText) {
     el.motionJsonText.value = MotionState.exported_json;
+  }
+}
+
+function setCheckboxValue(selector, value) {
+  const input = document.querySelector(selector);
+  if (input) {
+    input.checked = Boolean(value);
   }
 }
 
@@ -3341,6 +3809,8 @@ function translateStage(stage) {
   return {
     model: "模型",
     skeleton: "骨架",
+    mapping: "映射",
+    control_rig: "Control Rig",
     ik: "IK 控制器",
     motion: "动作模板",
     validate: "验证 / 修正",
@@ -3370,6 +3840,12 @@ function formatDirectionCommandMessage(sign, yaw, confirmed) {
 
 function translateViewOption(key) {
   return {
+    model: "模型",
+    deform_skeleton: "变形骨骼",
+    control_rig: "Control Rig",
+    joint_debug_controls: "关节 Debug 控制",
+    labels: "标签",
+    transform_gizmo: "Transform Gizmo",
     skeleton_labels: "骨架标签",
     ik_controls: "IK 控制器",
     bone_colors: "骨骼颜色",
@@ -3423,8 +3899,9 @@ function translateCommandName(name) {
     assign_humanoid_mapping: "指定人形骨骼映射",
     set_character_direction: "确认角色前方",
     create_source_skeleton_from_import: "视觉辅助适配骨架",
-    create_ik_controls: "创建 IK 控制器",
+    create_ik_controls: "创建 Control Rig",
     apply_motion_template: "应用动作模板",
+    set_control_transform: "设置控制器变换",
     set_ik_target: "设置 IK 目标",
     set_joint_position: "设置关节点",
     rotate_joint_branch: "旋转关节分支",
@@ -3543,7 +4020,12 @@ function formatParentBoneName(bone) {
 
 function translateControlName(name) {
   const knownName = {
+    Global_CTRL: "全局控制器",
+    Root_CTRL: "Root 控制器",
+    COG_CTRL: "重心控制器",
     Pelvis_CTRL: "骨盆控制器",
+    Chest_CTRL: "胸腔控制器",
+    Head_CTRL: "头部控制器",
     R_Foot_IK: "右脚 IK",
     L_Foot_IK: "左脚 IK",
     R_Hand_IK: "右手 IK",
@@ -3689,7 +4171,7 @@ function requireCharacterDirectionConfirmed() {
 
 function requireIkControls() {
   if (MotionState.ik_controls.length === 0) {
-    throw new Error("需要先创建 IK 控制器");
+    throw new Error("需要先创建 Control Rig");
   }
 }
 
@@ -4014,7 +4496,7 @@ function handleViewportPick(event) {
       return true;
     }
   }
-  const jointHits = raycaster.intersectObjects(skeletonGroup.children, true);
+  const jointHits = MotionState.show.joint_debug_controls ? raycaster.intersectObjects(skeletonGroup.children, true) : [];
   const jointHit = jointHits.find((item) => findPickData(item.object, "humanoid_joint"));
   if (jointHit) {
     const pickData = findPickData(jointHit.object, "humanoid_joint");
@@ -4143,7 +4625,7 @@ function updateHoverPick(event) {
   const controlPick = getBestIkControlPick(raycaster.intersectObjects(ikGroup.children, true), event)
     || getClosestIkControlScreenPick(event);
   const nextControlId = controlPick?.pickData?.control_id || null;
-  const jointHit = !nextControlId
+  const jointHit = !nextControlId && MotionState.show.joint_debug_controls
     ? raycaster.intersectObjects(skeletonGroup.children, true).find((item) => findPickData(item.object, "humanoid_joint"))
     : null;
   const nextJointName = jointHit ? findPickData(jointHit.object, "humanoid_joint")?.joint_name || null : null;
@@ -4199,7 +4681,12 @@ function finishIkControlDrag() {
   if (startSnapshot) {
     restoreCoreState(startSnapshot);
   }
-  executeCommand(createCommand("set_ik_target", { control_id: controlId, position: finalPosition }));
+  const control = MotionState.ik_controls.find((item) => item.id === controlId);
+  const commandName = control?.is_joint_control ? "set_ik_target" : "set_control_transform";
+  const args = control?.is_joint_control
+    ? { control_id: controlId, position: finalPosition }
+    : { control_id: controlId, transform_mode: "translate", space: MotionState.transform.space, position: finalPosition };
+  executeCommand(createCommand(commandName, args));
 }
 
 function beginJointDrag(event, jointName) {
@@ -4267,9 +4754,11 @@ function applyIkTargetPreview(controlId, position) {
   if (!control) {
     return;
   }
+  const previousControl = deepClone(control);
   control.position = position.map(Number);
-  applyControlToJoint(control);
+  applyControlToJoint(control, previousControl);
   MotionState.selected_control = control.id;
+  MotionState.ik_controls = syncIkControlsToJoints(MotionState.ik_controls);
 }
 
 function applyJointPositionPreview(jointName, position) {
@@ -4391,18 +4880,23 @@ function onKeyDown(event) {
     } else if (key === "enter") {
       event.preventDefault();
       finishKeyboardTransform();
+    } else if (["x", "y", "z"].includes(key)) {
+      event.preventDefault();
+      MotionState.transform.axis = MotionState.transform.axis === key ? null : key;
+      Runtime.transformAxis = MotionState.transform.axis;
+      renderAll();
     }
     return;
   }
   if (["g", "r", "s"].includes(key)) {
     event.preventDefault();
-    startKeyboardTransform(key);
+    startKeyboardTransform(getTransformModeFromKey(key));
   }
 }
 
 function startKeyboardTransform(mode) {
   const control = getSelectedTransformControl();
-  if (!control) {
+  if (!control || control.is_joint_control) {
     return;
   }
   Runtime.transformMode = mode;
@@ -4410,11 +4904,14 @@ function startKeyboardTransform(mode) {
     control_id: control.id,
     joint: control.target_joint,
     start_position: [...control.position],
+    start_rotation: [...(control.rotation || [0, 0, 0])],
+    start_scale: [...(control.scale || [1, 1, 1])],
   };
   Runtime.transformStartSnapshot = snapshotCoreState();
   Runtime.transformStartPointer = { ...Runtime.lastPointer };
   Runtime.transformFinalValue = null;
-  Runtime.transformAxis = getRigBasis().up.toArray();
+  Runtime.transformAxis = MotionState.transform.axis;
+  MotionState.transform.tool = mode;
 }
 
 function updateKeyboardTransform(event) {
@@ -4425,26 +4922,46 @@ function updateKeyboardTransform(event) {
   const dx = event.clientX - Runtime.transformStartPointer.x;
   const dy = event.clientY - Runtime.transformStartPointer.y;
   const subject = Runtime.transformSubject;
-  if (Runtime.transformMode === "g") {
+  if (Runtime.transformMode === "translate") {
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
     const start = new THREE.Vector3().fromArray(subject.start_position);
-    const next = start
+    let nextVector = start.clone()
       .addScaledVector(right, dx * cameraDistance * 0.0012)
-      .addScaledVector(up, -dy * cameraDistance * 0.0012)
-      .toArray();
+      .addScaledVector(up, -dy * cameraDistance * 0.0012);
+    if (MotionState.transform.axis) {
+      const axis = getTransformAxisVector(MotionState.transform.axis, subject.control_id);
+      const amount = getPointerAxisAmount(axis, dx, dy);
+      nextVector = start.clone().addScaledVector(axis, amount);
+    }
+    const next = nextVector.toArray();
     applyIkTargetPreview(subject.control_id, next);
     Runtime.transformFinalValue = { position: next };
-  } else if (Runtime.transformMode === "r") {
+  } else if (Runtime.transformMode === "rotate") {
     const angle = dx * 0.012;
-    rotateJointBranch(subject.joint, angle, getRigBasis().up.clone());
-    MotionState.ik_controls = syncIkControlsToJoints(MotionState.ik_controls);
-    Runtime.transformFinalValue = { angle, axis: getRigBasis().up.toArray() };
-  } else if (Runtime.transformMode === "s") {
+    const axisName = MotionState.transform.axis || "y";
+    const nextRotation = [...subject.start_rotation];
+    const axisIndex = { x: 0, y: 1, z: 2 }[axisName] ?? 1;
+    nextRotation[axisIndex] += angle;
+    const control = MotionState.ik_controls.find((item) => item.id === subject.control_id);
+    if (control) {
+      const previousControl = deepClone(control);
+      control.rotation = nextRotation;
+      applyControlToJoint(control, previousControl);
+      MotionState.ik_controls = syncIkControlsToJoints(MotionState.ik_controls);
+    }
+    Runtime.transformFinalValue = { rotation: nextRotation };
+  } else if (Runtime.transformMode === "scale") {
     const factor = Math.max(0.15, Math.min(6, Math.exp(dx * 0.01)));
-    scaleJointBranch(subject.joint, factor);
-    MotionState.ik_controls = syncIkControlsToJoints(MotionState.ik_controls);
-    Runtime.transformFinalValue = { scale: factor };
+    const nextScale = subject.start_scale.map((value) => value * factor);
+    const control = MotionState.ik_controls.find((item) => item.id === subject.control_id);
+    if (control?.allow_scale) {
+      const previousControl = deepClone(control);
+      control.scale = nextScale;
+      applyControlToJoint(control, previousControl);
+      MotionState.ik_controls = syncIkControlsToJoints(MotionState.ik_controls);
+    }
+    Runtime.transformFinalValue = { scale: nextScale };
   }
   renderAll();
 }
@@ -4464,12 +4981,12 @@ function finishKeyboardTransform() {
     return;
   }
   restoreCoreState(snapshot);
-  if (mode === "g") {
-    executeCommand(createCommand("set_ik_target", { control_id: subject.control_id, position: value.position }));
-  } else if (mode === "r") {
-    executeCommand(createCommand("rotate_joint_branch", { joint: subject.joint, angle: value.angle, axis: value.axis }));
-  } else if (mode === "s") {
-    executeCommand(createCommand("scale_joint_branch", { joint: subject.joint, scale: value.scale }));
+  if (mode === "translate") {
+    executeCommand(createCommand("set_control_transform", { control_id: subject.control_id, transform_mode: "translate", space: MotionState.transform.space, position: value.position }));
+  } else if (mode === "rotate") {
+    executeCommand(createCommand("set_control_transform", { control_id: subject.control_id, transform_mode: "rotate", space: MotionState.transform.space, rotation: value.rotation }));
+  } else if (mode === "scale") {
+    executeCommand(createCommand("set_control_transform", { control_id: subject.control_id, transform_mode: "scale", space: MotionState.transform.space, scale: value.scale }));
   }
 }
 
@@ -4491,6 +5008,35 @@ function getSelectedTransformControl() {
     || getControlForJoint(MotionState.selected_bone)
     || MotionState.ik_controls[0]
     || null;
+}
+
+function getTransformModeFromKey(key) {
+  return key === "g" ? "translate" : key === "r" ? "rotate" : key === "s" ? "scale" : "select";
+}
+
+function getTransformAxisVector(axisName, controlId) {
+  const basis = getRigBasis();
+  if (MotionState.transform.space === "local") {
+    if (axisName === "x") return basis.right.clone().normalize();
+    if (axisName === "y") return basis.up.clone().normalize();
+    return basis.forward.clone().normalize();
+  }
+  if (axisName === "x") return new THREE.Vector3(1, 0, 0);
+  if (axisName === "y") return new THREE.Vector3(0, 1, 0);
+  return new THREE.Vector3(0, 0, 1);
+}
+
+function getPointerAxisAmount(axis, dx, dy) {
+  const origin = new THREE.Vector3();
+  const screenOrigin = origin.clone().project(camera);
+  const screenAxis = axis.clone().normalize().multiplyScalar(0.5).project(camera);
+  const axisScreen = new THREE.Vector2(screenAxis.x - screenOrigin.x, -(screenAxis.y - screenOrigin.y));
+  if (axisScreen.length() < 0.0001) {
+    return dx * cameraDistance * 0.0012;
+  }
+  axisScreen.normalize();
+  const pointer = new THREE.Vector2(dx, dy);
+  return pointer.dot(axisScreen) * cameraDistance * 0.0012;
 }
 
 function getNavigationMode(event) {
@@ -4567,6 +5113,9 @@ function getMotionStateSummary() {
     selected_bone: MotionState.selected_bone,
     selected_source_bone: getSelectedSourceBoneName(),
     selected_control: MotionState.selected_control,
+    transform: deepClone(MotionState.transform),
+    control_ids: MotionState.ik_controls.filter((control) => !control.is_joint_control).map((control) => control.id),
+    visible_joint_debug_controls: Boolean(MotionState.show.joint_debug_controls),
     command_log: MotionState.command_log.length,
     undo_stack: MotionState.undo_stack.length,
     redo_stack: MotionState.redo_stack.length,

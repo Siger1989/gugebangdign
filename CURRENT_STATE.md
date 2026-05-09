@@ -1,5 +1,58 @@
 # CURRENT_STATE
 
+## Control Rig Layer Refactor - 2026-05-09
+
+Current objective:
+- Stop feature growth and refactor the viewport from a mixed skeleton/debug display into an animator-facing Control Rig workflow.
+
+Current progress:
+- Split viewport display into model, deform skeleton, control rig, IK controls, joint debug controls, labels, transform gizmo, motion path, foot locks, ground, and validation layers.
+- Default view now keeps `Joint Debug` off; the 19 debug joint controls no longer flood the viewport.
+- Added main Control Rig controllers:
+  - `Global_CTRL`
+  - `Root_CTRL`
+  - `COG_CTRL`
+  - `Pelvis_CTRL`
+  - `Chest_CTRL`
+  - `Head_CTRL`
+  - `L_Hand_IK` / `R_Hand_IK`
+  - `L_Foot_IK` / `R_Foot_IK`
+  - `L_Knee_Pole` / `R_Knee_Pole`
+  - `L_Elbow_Pole` / `R_Elbow_Pole`
+- Top toolbar now has workflow steps plus Select / Move G / Rotate R / Scale S / Local-Global / Snap / Mirror controls.
+- Added `set_control_transform` command for Control Rig transforms.
+- G/R/S keyboard transforms now commit through `set_control_transform` for selected Control Rig controls.
+- Transform gizmo now renders only on the selected Control Rig control.
+- Walk_8F now creates keyframes on Control Rig controls first, including `COG_CTRL`, `Pelvis_CTRL`, and `Chest_CTRL`, then solves the skeleton from those controls.
+- Exported keyframes carry Control Rig positions, rotations, and scales.
+
+Files changed:
+- `index.html`
+- `styles.css`
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `HANDOFF.md`
+- `CURRENT_STATE.md`
+
+Validation result: PASS
+
+Validation details:
+- `node --check app.js`: PASS.
+- `node --check scripts\validate_demo_import.mjs`: PASS.
+- `npm run validate:import`: PASS.
+- Validation now checks:
+  - 14 main Control Rig controls exist.
+  - 19 joint debug controls still exist but default hidden.
+  - `COG_CTRL`, `Pelvis_CTRL`, and `Chest_CTRL` exist.
+  - `set_control_transform` writes a successful command log entry.
+  - Walk_8F keyframes include COG and pelvis control data.
+- Latest screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_065946Z.png`
+
+Next step:
+- Hard refresh `http://localhost:8780/`.
+- Continue refining controller shapes and transform gizmo hit-testing if animator usability still feels rough.
+
 ## IK Control Visual Simplification And Torso Rotation - 2026-05-09
 
 Current objective:

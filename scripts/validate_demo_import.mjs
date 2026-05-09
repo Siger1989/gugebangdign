@@ -40,7 +40,19 @@ try {
   await clickAndExpect("#createSkeletonButton", "create_humanoid_skeleton", (state) => (
     state.skeleton === "Humanoid_v1" && state.joints === 19 && state.bones === 18
   ));
-  await clickAndExpect("#createIkButton", "create_ik_controls", (state) => state.ik_controls === 9);
+  await clickAndExpect("#createIkButton", "create_ik_controls", (state) => (
+    state.ik_controls === 14
+    && state.visible_joint_debug_controls === false
+    && state.control_ids.includes("COG_CTRL")
+    && state.control_ids.includes("Pelvis_CTRL")
+    && state.control_ids.includes("Chest_CTRL")
+  ));
+  await executeCommandAndExpect("set_control_transform", {
+    control_id: "COG_CTRL",
+    transform_mode: "translate",
+    space: "global",
+    position: [0.03, 1.18, 0],
+  }, (state) => state.selected_control === "COG_CTRL");
   await clickAndExpect("#applyWalkButton", "apply_motion_template", (state) => state.keyframes === 8);
 
   await ensureDom("timeline keyframes", async () => {
@@ -69,13 +81,23 @@ try {
   record("export contains skeleton", exportedJson.skeleton?.id === "Humanoid_v1", exportedJson.skeleton);
   const coreIkControls = (exportedJson.ik_controls || []).filter((control) => !control.is_joint_control);
   const jointControls = (exportedJson.ik_controls || []).filter((control) => control.is_joint_control);
-  record("export contains ik_controls", coreIkControls.length === 9 && jointControls.length === 19, {
+  record("export contains ik_controls", coreIkControls.length === 14 && jointControls.length === 19, {
     core: coreIkControls.length,
     joint: jointControls.length,
     count: exportedJson.ik_controls?.length,
   });
   record("export contains direction", typeof exportedJson.direction?.forward_sign === "number", exportedJson.direction);
   record("export contains keyframes", exportedJson.keyframes?.length === 8, { count: exportedJson.keyframes?.length });
+  const firstWalkFrame = exportedJson.keyframes?.[0] || {};
+  const keyedControls = new Map((firstWalkFrame.ik_controls || []).map((control) => [control.id, control]));
+  record("walk template keyframes COG and pelvis controls", Boolean(
+    keyedControls.get("COG_CTRL")
+    && keyedControls.get("Pelvis_CTRL")
+    && (keyedControls.get("Pelvis_CTRL")?.rotation || []).some((value) => Math.abs(Number(value)) > 0.001)
+  ), {
+    cog: keyedControls.get("COG_CTRL"),
+    pelvis: keyedControls.get("Pelvis_CTRL"),
+  });
   record("export contains validation_report", exportedJson.validation_report?.status === "Passed", exportedJson.validation_report);
 
   const beforeUndo = await getSummary();
@@ -92,6 +114,7 @@ try {
     "load_test_dummy",
     "create_humanoid_skeleton",
     "create_ik_controls",
+    "set_control_transform",
     "apply_motion_template",
     "play",
     "validate_motion",
@@ -187,7 +210,11 @@ async function importSampleGlbAndValidateToeFallback() {
 
   await executeCommandAndExpect("set_character_direction", { forward_sign: 1, yaw_degrees: 0, confirmed: true }, (state) => state.direction?.confirmed === true);
   await clickAndExpect("#createIkButton", "create_ik_controls", (state) => (
-    state.ik_controls === 9 && state.joint_controls === 19
+    state.ik_controls === 14
+    && state.joint_controls === 19
+    && state.visible_joint_debug_controls === false
+    && state.control_ids.includes("COG_CTRL")
+    && state.control_ids.includes("Chest_CTRL")
   ));
   const beforeRotateDebug = await page.evaluate(() => window.__motionDebug.getSourceRigDebug());
   await executeCommandAndExpect("rotate_joint_branch", { joint: "Hips", angle: 0.45, axis: [0, 1, 0] }, (state) => (
