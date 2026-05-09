@@ -1,5 +1,68 @@
 # CURRENT_STATE
 
+## Chinese UI And Stage Flow Cleanup - 2026-05-09
+
+Current objective:
+- Make the interface readable in Chinese and remove confusing workflow jumps/display clutter around direction confirmation, source skeleton preview, and Control Rig creation.
+
+Current progress:
+- Top workflow labels are now Chinese:
+  - 模型
+  - 骨架/方向
+  - 映射校正
+  - 控制器层
+  - 动作模板
+  - 验证
+  - 导出
+- Top transform tools are now Chinese:
+  - 选择
+  - 移动 G
+  - 旋转 R
+  - 缩放 S
+  - 全局/局部
+  - 吸附
+  - 镜像
+- Visible display toggles were reduced to only:
+  - 模型
+  - 骨架参考
+  - 控制器
+  - 变换手柄
+  - 地面
+  - 问题提示
+- Advanced debug/display switches still exist internally but are hidden from the main viewport toolbar.
+- The debug panel is now collapsed by default and renamed `高级调试`.
+- `生成参考骨架` no longer jumps to the Control Rig stage; it stays in `骨架/方向` so the direction arrow and mapping context remain visible.
+- `生成 Humanoid_v1` only advances to `控制器层` after imported-model direction has been confirmed; otherwise it keeps the user in `骨架/方向`.
+- `创建控制器层` now requires confirmed character forward on imported models, preventing Control Rig creation from silently using an unconfirmed/reversed direction.
+- The yellow character-forward arrow is now rendered through `骨架/方向`, `映射校正`, `控制器层`, and `动作模板` stages while a skeleton is present.
+- Validation now checks the imported GLB flow: import -> generate reference skeleton -> remain on skeleton stage -> confirm direction -> generate Humanoid -> enter control rig.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Validation result: PASS
+
+Validation details:
+- `node --check app.js`: PASS.
+- `node --check scripts\validate_demo_import.mjs`: PASS.
+- `npm run check`: PASS.
+- `npm run validate:import`: PASS.
+- Latest screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_095328Z.png`
+
+Next step:
+- Hard refresh `http://localhost:8780/`.
+- Recommended imported-GLB flow:
+  1. `模型`: 导入 GLB
+  2. `骨架/方向`: 生成参考骨架，调整黄色前方箭头并确认
+  3. `骨架/方向`: 生成 Humanoid_v1
+  4. `控制器层`: 创建控制器层
+  5. `动作模板`: 应用 8 姿势走路模板
+
 ## Thin Controls, Rotation Direction, And Walk Hand Crossing Fix - 2026-05-09
 
 Current objective:

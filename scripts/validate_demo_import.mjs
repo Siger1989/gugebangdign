@@ -236,10 +236,22 @@ async function importSampleGlbAndValidateToeFallback() {
   });
   record("sample GLB has no missing required humanoid mapping", (imported.missing_required_mapping || []).length === 0, imported);
 
+  await clickAndExpect("#createSourceSkeletonButton", "create_source_skeleton_from_import", (state) => (
+    state.skeleton === "SourceRig_v1"
+    && state.current_stage === "skeleton"
+    && (state.missing_required_mapping || []).length === 0
+  ));
+
+  await executeCommandAndExpect("set_character_direction", { forward_sign: 1, yaw_degrees: 0, confirmed: true }, (state) => (
+    state.direction?.confirmed === true
+    && state.current_stage === "skeleton"
+  ));
+
   await clickAndExpect("#createSkeletonButton", "create_humanoid_skeleton", (state) => (
     state.skeleton === "Humanoid_v1"
     && state.joints === 19
     && (state.missing_required_mapping || []).length === 0
+    && state.current_stage === "control_rig"
   ));
 
   const humanoidState = await page.evaluate(() => window.__motionDebug.getMotionState());

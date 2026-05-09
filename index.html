@@ -2,7 +2,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>动作生成流水线演示</title>
+  <title>动作生成流水线</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="./styles.css">
   <script>
@@ -56,30 +56,30 @@
       <header class="pipeline-header">
         <div class="brand-block">
           <h1>动作生成流水线</h1>
-          <p>命令接口驱动的人形骨架 v1 动作闭环</p>
+          <p>导入模型、确认骨架方向、创建控制器层、生成和微调动作</p>
         </div>
         <nav class="flow-steps" aria-label="流水线阶段">
-          <button class="flow-step is-active" data-stage="model"><span>1</span>Model</button>
-          <button class="flow-step" data-stage="skeleton"><span>2</span>Skeleton</button>
-          <button class="flow-step" data-stage="mapping"><span>3</span>Mapping</button>
-          <button class="flow-step" data-stage="control_rig"><span>4</span>Control Rig</button>
-          <button class="flow-step" data-stage="motion"><span>5</span>Motion Template</button>
-          <button class="flow-step" data-stage="validate"><span>6</span>Validate</button>
-          <button class="flow-step" data-stage="export"><span>7</span>Export</button>
+          <button class="flow-step is-active" data-stage="model"><span>1</span>模型</button>
+          <button class="flow-step" data-stage="skeleton"><span>2</span>骨架/方向</button>
+          <button class="flow-step" data-stage="mapping"><span>3</span>映射校正</button>
+          <button class="flow-step" data-stage="control_rig"><span>4</span>控制器层</button>
+          <button class="flow-step" data-stage="motion"><span>5</span>动作模板</button>
+          <button class="flow-step" data-stage="validate"><span>6</span>验证</button>
+          <button class="flow-step" data-stage="export"><span>7</span>导出</button>
         </nav>
         <div class="tool-strip" aria-label="动画工具">
-          <button class="tool-button is-active" data-tool="select" type="button">Select</button>
-          <button class="tool-button" data-tool="translate" type="button">Move G</button>
-          <button class="tool-button" data-tool="rotate" type="button">Rotate R</button>
-          <button class="tool-button" data-tool="scale" type="button">Scale S</button>
-          <button id="spaceToggleButton" type="button">Global</button>
-          <button id="snapToggleButton" type="button">Snap</button>
-          <button id="mirrorToggleButton" type="button">Mirror</button>
+          <button class="tool-button is-active" data-tool="select" type="button">选择</button>
+          <button class="tool-button" data-tool="translate" type="button">移动 G</button>
+          <button class="tool-button" data-tool="rotate" type="button">旋转 R</button>
+          <button class="tool-button" data-tool="scale" type="button">缩放 S</button>
+          <button id="spaceToggleButton" type="button">全局</button>
+          <button id="snapToggleButton" type="button">吸附</button>
+          <button id="mirrorToggleButton" type="button">镜像</button>
         </div>
         <div class="status-strip" aria-label="流水线状态">
           <div><span>模型</span><strong id="statusModel">无</strong></div>
           <div><span>骨架</span><strong id="statusSkeleton">缺失</strong></div>
-          <div><span>Control Rig</span><strong id="statusIk">0</strong></div>
+          <div><span>控制器层</span><strong id="statusIk">0</strong></div>
           <div><span>关键帧</span><strong id="statusKeyframes">0</strong></div>
           <div><span>当前帧</span><strong id="statusFrame">1 / 24</strong></div>
           <div><span>未保存</span><strong id="statusDirty">否</strong></div>
@@ -90,17 +90,17 @@
       <div class="viewport-wrap">
         <canvas id="rigCanvas" tabindex="0" aria-label="3D 视口"></canvas>
         <div class="viewport-toggles" aria-label="显示选项">
-          <label><input id="showModel" type="checkbox" checked> Model</label>
-          <label><input id="showDeformSkeleton" type="checkbox" checked> Deform Skeleton</label>
-          <label><input id="showControlRig" type="checkbox" checked> Control Rig</label>
-          <label><input id="showIkControls" type="checkbox" checked> IK Controls</label>
-          <label><input id="showJointDebugControls" type="checkbox"> Joint Debug</label>
-          <label><input id="showLabels" type="checkbox"> Labels</label>
-          <label><input id="showTransformGizmo" type="checkbox" checked> Transform Gizmo</label>
-          <label><input id="showMotionPaths" type="checkbox" checked> Motion Path</label>
-          <label><input id="showFootLocks" type="checkbox" checked> Foot Locks</label>
-          <label><input id="showGroundPlane" type="checkbox" checked> Ground</label>
-          <label><input id="showValidationIssues" type="checkbox" checked> Validation</label>
+          <label><input id="showModel" type="checkbox" checked> 模型</label>
+          <label><input id="showDeformSkeleton" type="checkbox" checked> 骨架参考</label>
+          <label><input id="showControlRig" type="checkbox" checked> 控制器</label>
+          <label><input id="showTransformGizmo" type="checkbox" checked> 变换手柄</label>
+          <label><input id="showGroundPlane" type="checkbox" checked> 地面</label>
+          <label><input id="showValidationIssues" type="checkbox" checked> 问题提示</label>
+          <label class="advanced-toggle"><input id="showIkControls" type="checkbox" checked> IK Controls</label>
+          <label class="advanced-toggle"><input id="showJointDebugControls" type="checkbox"> Joint Debug</label>
+          <label class="advanced-toggle"><input id="showLabels" type="checkbox"> Labels</label>
+          <label class="advanced-toggle"><input id="showMotionPaths" type="checkbox" checked> Motion Path</label>
+          <label class="advanced-toggle"><input id="showFootLocks" type="checkbox" checked> Foot Locks</label>
         </div>
         <div class="viewport-opacity-controls" aria-label="视图透明度控制">
           <label>
@@ -181,10 +181,11 @@
       </section>
 
       <section class="inspector-section" data-panel="skeleton">
-        <h2>骨架</h2>
+        <h2>骨架 / 方向</h2>
+        <p class="stage-note">本步只确认模型骨架和黄色前方箭头。前方确认后，再进入“控制 Rig”。</p>
         <div class="button-row">
-          <button id="createSkeletonButton">默认 / 映射 Humanoid_v1</button>
-          <button id="createSourceSkeletonButton">视觉辅助适配骨架</button>
+          <button id="createSkeletonButton">生成 Humanoid_v1</button>
+          <button id="createSourceSkeletonButton">生成参考骨架</button>
         </div>
         <div class="mapping-summary">
           <span>导入骨骼</span><strong id="sourceBoneCountValue">0</strong>
@@ -228,8 +229,9 @@
       </section>
 
       <section class="inspector-section" data-panel="ik">
-        <h2>Control Rig</h2>
-        <button id="createIkButton">创建 Control Rig</button>
+        <h2>控制器层</h2>
+        <p class="stage-note">本步只创建动画师操作的控制器，不修改方向；方向需要回到“骨架/方向”确认。</p>
+        <button id="createIkButton">创建控制器层</button>
         <label class="field-row compact">
           <span>选中控制器</span>
           <select id="selectedControlSelect"></select>
@@ -282,8 +284,8 @@
         <button id="redoButton">重做</button>
       </div>
 
-      <details class="debug-panel" open>
-        <summary>命令接口调试</summary>
+      <details class="debug-panel">
+        <summary>高级调试</summary>
         <div class="debug-grid">
           <span>最近命令</span><strong id="debugLastCommand">无</strong>
           <span>最近结果</span><pre id="debugLastResult">无</pre>

@@ -312,6 +312,10 @@ button:disabled {
   accent-color: var(--accent);
 }
 
+.viewport-toggles .advanced-toggle {
+  display: none;
+}
+
 .viewport-help {
   position: absolute;
   left: 8px;
@@ -600,6 +604,17 @@ button:disabled {
   color: var(--text);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.stage-note {
+  margin: 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(71, 210, 255, 0.22);
+  border-radius: 7px;
+  background: rgba(71, 210, 255, 0.07);
+  color: #cfe8ff;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .direction-confirm {

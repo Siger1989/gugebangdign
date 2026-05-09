@@ -852,7 +852,7 @@ const COMMAND_EXECUTORS = {
         bounds,
       };
       MotionState.dirty_state = true;
-      Runtime.stage = "ik";
+      Runtime.stage = "skeleton";
       return {
         message: "未检测到 GLB 骨骼，已根据模型轮廓估算 Humanoid_v1 骨架",
         joints: joints.length,
@@ -891,7 +891,7 @@ const COMMAND_EXECUTORS = {
       previous_opacity: previousOpacity,
     };
     MotionState.dirty_state = true;
-    Runtime.stage = hasRequiredHumanoidMapping() ? "ik" : "skeleton";
+    Runtime.stage = "skeleton";
     return {
       message: `已根据导入 T-Pose 骨骼生成适配骨架：${joints.length} 个关节点 / ${bones.length} 根骨骼`,
       source_bones: MotionState.source_bones.length,
@@ -928,7 +928,7 @@ const COMMAND_EXECUTORS = {
     MotionState.validation_report = createEmptyValidationReport();
     MotionState.dirty_state = true;
     syncSourceRigToMotionState();
-    Runtime.stage = "ik";
+    Runtime.stage = MotionState.source_bones.length > 0 && !MotionState.direction?.confirmed ? "skeleton" : "control_rig";
     return {
       message: "已创建 Humanoid_v1 人形骨架",
       joints: joints.length,
@@ -973,6 +973,7 @@ const COMMAND_EXECUTORS = {
 
   create_ik_controls: async () => {
     ensureHumanoidSkeletonForAnimation();
+    requireCharacterDirectionConfirmed();
     MotionState.ik_controls = createIkControlsFromCurrentSkeleton();
     MotionState.selected_control = MotionState.ik_controls[0]?.id || null;
     MotionState.dirty_state = true;
@@ -3732,7 +3733,8 @@ function renderValidationIssues() {
 }
 
 function renderDirectionHint() {
-  if (!["skeleton", "mapping"].includes(Runtime.stage) || !MotionState.skeleton || MotionState.joints.length === 0) {
+  const directionStages = new Set(["skeleton", "mapping", "control_rig", "ik", "motion"]);
+  if (!directionStages.has(Runtime.stage) || !MotionState.skeleton || MotionState.joints.length === 0) {
     return;
   }
   const hips = getJoint("Hips") || MotionState.joints[0];
@@ -3785,7 +3787,7 @@ function renderUi() {
   el.flowSteps.forEach((button) => button.classList.toggle("is-active", button.dataset.stage === Runtime.stage));
   el.toolButtons.forEach((button) => button.classList.toggle("is-active", button.dataset.tool === MotionState.transform.tool));
   if (el.spaceToggleButton) {
-    el.spaceToggleButton.textContent = MotionState.transform.space === "local" ? "Local" : "Global";
+    el.spaceToggleButton.textContent = MotionState.transform.space === "local" ? "局部" : "全局";
     el.spaceToggleButton.classList.toggle("is-active", MotionState.transform.space === "local");
   }
   el.snapToggleButton?.classList.toggle("is-active", MotionState.transform.snap);
@@ -3797,7 +3799,7 @@ function renderUi() {
 
   el.statusModel.textContent = MotionState.model.loaded ? "已加载" : "无";
   el.statusSkeleton.textContent = MotionState.skeleton?.id ? translateSkeletonId(MotionState.skeleton.id) : "缺失";
-  el.statusIk.textContent = `${getCoreIkControls().length} Rig + ${getJointControls().length} Debug`;
+  el.statusIk.textContent = `${getCoreIkControls().length} 主控 + ${getJointControls().length} 调试`;
   el.statusKeyframes.textContent = `${MotionState.keyframes.length} / ${MotionState.total_frames}`;
   el.statusFrame.textContent = `${MotionState.current_frame} / ${MotionState.total_frames}`;
   el.statusDirty.textContent = MotionState.dirty_state ? "是" : "否";
@@ -5427,6 +5429,7 @@ function installDebugApi() {
 function getMotionStateSummary() {
   return {
     model: MotionState.model.loaded ? "Loaded" : "None",
+    current_stage: Runtime.stage,
     skeleton: MotionState.skeleton?.id || "Missing",
     source_bones: MotionState.source_bones.length,
     glb_skins: MotionState.import_diagnostics.skins,
