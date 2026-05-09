@@ -1,5 +1,48 @@
 # CURRENT_STATE
 
+## Handoff Refresh And GitHub Publish - 2026-05-09
+
+Current objective:
+- Update the handoff document to include the latest direction-confirmation, joint-control, and viewport-interaction changes, then publish to GitHub.
+
+Current progress:
+- Updated `HANDOFF.md` with:
+  - direction confirmation before Walk_8F
+  - `set_character_direction`
+  - exported/imported `direction`
+  - 9 core IK controls plus 19 joint controls
+  - G/R/S control notes
+  - hover-before-select behavior
+  - middle-mouse orbit distance lock
+  - knee pole following confirmed character forward
+  - latest validation notes and remaining limitations
+
+Files changed:
+- `HANDOFF.md`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status -sb`
+- `git diff --stat`
+- `npm run check`
+- `git add -- CURRENT_STATE.md HANDOFF.md`
+- `git commit -m "Refresh direction handoff"`
+- `git push origin main`
+
+Validation result: PASS
+
+Validation details:
+- `npm run check`: PASS.
+- Existing latest pipeline validation remains:
+  - `npm run validate:import`: PASS
+  - latest screenshot `artifacts/screenshots/pipeline_acceptance_20260509_001441Z.png`
+
+Current blocking issue:
+- None.
+
+Next step:
+- Manual browser refresh at `http://localhost:8780/index.html` and continue testing imported GLB workflow from the latest GitHub state.
+
 ## Direction Confirmation And Blender Orbit Fix - 2026-05-09
 
 Current objective:

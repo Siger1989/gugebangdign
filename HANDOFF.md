@@ -7,6 +7,7 @@
 ```text
 导入/加载模型
 -> 读取或确认人形骨骼
+-> 确认角色前方 / 必要时前后反转
 -> 创建 IK 控制器
 -> 应用 Walk_8F 走路模板
 -> 手动调整关节/IK
@@ -66,9 +67,11 @@ start_demo.bat
    - 自动推断 T-Pose 源骨骼结构。
    - 生成或映射 `Humanoid_v1`。
    - 支持源骨骼到标准人形关节的映射确认。
+   - 导入 GLB 后必须确认 `角色前方`；如果走路方向反了，点击 `前后反转` 后再套动作。
 
 3. `IK 控制器` 阶段：
-   - 创建 9 个 IK 控制器。
+   - 创建 9 个核心 IK 控制器。
+   - 同时创建 19 个关节控制器，头、躯干、四肢、脚趾都可直接选择和调整。
    - 支持手、脚、骨盆、肘/膝 Pole 控制。
    - 视口里可以拖 IK 控制器。
    - 视口里可以拖普通人形关节点。
@@ -113,6 +116,7 @@ UI 按钮和视口拖拽不能直接改 `MotionState`，只能创建命令再执
 - `model`
 - `source_bones`
 - `humanoid_mapping`
+- `direction`
 - `skeleton`
 - `bones`
 - `joints`
@@ -137,10 +141,13 @@ UI 按钮和视口拖拽不能直接改 `MotionState`，只能创建命令再执
 - `create_humanoid_skeleton`
 - `create_source_skeleton_from_import`
 - `assign_humanoid_mapping`
+- `set_character_direction`
 - `create_ik_controls`
 - `apply_motion_template`
 - `set_ik_target`
 - `set_joint_position`
+- `rotate_joint_branch`
+- `scale_joint_branch`
 - `insert_keyframe`
 - `smooth_keyframes_between`
 - `validate_motion`
@@ -185,7 +192,7 @@ UI 按钮和视口拖拽不能直接改 `MotionState`，只能创建命令再执
 
 ## IK 和关节点控制
 
-当前 IK 控制器：
+当前核心 IK 控制器：
 
 - `Pelvis_CTRL`
 - `R_Foot_IK`
@@ -197,11 +204,17 @@ UI 按钮和视口拖拽不能直接改 `MotionState`，只能创建命令再执
 - `R_Elbow_Pole`
 - `L_Elbow_Pole`
 
+当前关节控制器：
+
+- 每个 `Humanoid_v1` 标准关节点都有一个 `${JointName}_CTRL`。
+- 这 19 个控制器用于直接选择和调整头、颈、胸、脊柱、骨盆、手臂、腿、脚、脚趾。
+- 状态栏显示为 `9 IK + 19 关节`，导出的 Motion JSON 中两类控制器都会保存。
+
 当前 IK 行为：
 
 - 手 IK 解两段链：上臂 -> 前臂 -> 手。
 - 脚 IK 解两段链：大腿 -> 小腿 -> 脚，并保持脚尖相对偏移。
-- Pole 控制肘/膝弯曲方向。
+- Pole 控制肘/膝弯曲方向；膝盖 Pole 跟随已确认的角色前方，避免默认放到后面。
 - 骨盆控制器移动整套骨架和 IK 控制器。
 - 视口拖拽结束后记录 `set_ik_target` 命令。
 
@@ -211,6 +224,8 @@ UI 按钮和视口拖拽不能直接改 `MotionState`，只能创建命令再执
 - 可在视口拖动关节点。
 - 拖动结束后记录 `set_joint_position` 命令。
 - 子链会跟随被拖动关节点，同时保留父骨段长度。
+- 选中控制器或关节后，可用 `G` / `R` / `S` 进入移动、旋转、缩放式调整。
+- 鼠标悬停控制器会先高亮，点击只负责选中；只有拖动超过阈值才开始实际变换，避免点击时骨骼跳动。
 
 如果 IK 控制器遮挡普通关节点，可临时关闭顶部 `IK 控制器` 显示开关后再拖关节点。
 
@@ -249,6 +264,9 @@ Walk_8F 模板姿势：
 - 生成源骨骼列表。
 - 自动尝试映射到 `Humanoid_v1`。
 - Walk_8F 和 IK 不是控制一套孤立默认骨架，而是通过映射驱动导入模型自己的源骨骼。
+- 导入模型初始方向只作为推断值，`Walk_8F` 应用前必须在骨架阶段确认角色前方。
+- `前后反转` 会切换 `MotionState.direction.forward_sign`，并清空旧关键帧，避免复用错误方向动作。
+- 导出的 Motion JSON 包含 `direction`，重新导入时会恢复前方方向状态。
 
 已验证示例：
 
@@ -262,19 +280,21 @@ C:\Users\sigeryang\Downloads\female+figure+3d+model.glb
 - GLB skins：1
 - GLB joints：41
 - 人形映射：19 / 19
-- IK 控制器：9 / 9
+- IK 控制器：9 个核心 IK + 19 个关节控制器
 - Walk_8F 关键姿势：8
 
 ## 视口操作
 
 当前参考 Blender 基础方式：
 
-- 中键旋转视图。
+- 中键旋转视图；旋转时锁定当前 camera distance，不会改变远近。
 - `Shift + 中键` 平移。
 - `Ctrl + 中键` 或滚轮缩放。
 - 没有中键时可用 `Alt + 左键` 替代旋转。
 - 左键拖 IK 控制器。
 - 左键拖普通关节点。
+- 选中控制器后，视图围绕该控制器/关节点旋转。
+- 缩放范围已放宽，可以比早期版本更贴近模型检查。
 
 可调显示：
 
@@ -314,6 +334,10 @@ npm run validate:import
 
 - `npm run check`：PASS。
 - `npm run validate:import`：PASS。
+- 导入 GLB 后，未确认角色前方时应用 Walk_8F 会被阻止并给出明确错误。
+- 确认角色前方后，Walk_8F 可正常创建 8 个关键帧。
+- `前后反转` 会清空旧关键帧，等待重新应用方向正确的 Walk_8F。
+- 中键旋转会改变 yaw/pitch，但 camera distance 保持不变。
 - 视口拖 IK 控制器：记录 `set_ik_target` 成功。
 - 视口拖普通关节点：记录 `set_joint_position` 成功。
 - 保存第 5 帧：成功创建额外关键帧。
@@ -327,6 +351,7 @@ npm run validate:import
 - 真实 glTF animation sampler/channel 导出尚未实现，目前导出 Motion JSON。
 - IK 是两段链 MVP，后续需要加入关节限位、锁轴、脚底锁定优化和更稳定的 Pole 约束。
 - 源骨骼映射对不同 GLB 命名风格仍需人工确认面板继续增强。
+- 角色前方目前是人工确认/前后反转，不做复杂自动视觉识别定向。
 - Electron / EXE 打包未做。
 
 ## 建议下一步
