@@ -47,6 +47,8 @@ try {
     && state.control_ids.includes("Pelvis_CTRL")
     && state.control_ids.includes("Chest_CTRL")
   ));
+  await executeCommandAndExpect("select_control", { control: "COG_CTRL" }, (state) => state.selected_control === "COG_CTRL");
+  await keyboardRotateSelectedControlAndExpect("COG_CTRL");
   await executeCommandAndExpect("set_control_transform", {
     control_id: "COG_CTRL",
     transform_mode: "translate",
@@ -122,6 +124,7 @@ try {
     "load_test_dummy",
     "create_humanoid_skeleton",
     "create_ik_controls",
+    "select_control",
     "set_control_transform",
     "set_control_visual_size",
     "set_control_visual_thickness",
@@ -182,6 +185,33 @@ async function executeCommandAndExpect(commandName, args, predicate) {
   const logEntry = await getLastCommand(commandName);
   record(`${commandName} status success`, logEntry?.status === "success", logEntry);
   record(`${commandName} state expectation`, Boolean(predicate(state)), state);
+}
+
+async function keyboardRotateSelectedControlAndExpect(controlId) {
+  const control = await page.evaluate((id) => (
+    window.__motionDebug.getIkControlScreenPositions().find((item) => item.id === id && item.visible)
+  ), controlId);
+  record("keyboard rotate control visible", Boolean(control), control);
+  if (!control) {
+    return;
+  }
+  const beforeCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.mouse.move(control.x + 70, control.y);
+  await page.locator("#rigCanvas").focus();
+  await page.keyboard.press("r");
+  await page.mouse.move(control.x + 114, control.y + 82, { steps: 10 });
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForFunction(({ count }) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => (
+      entry.name === "set_control_transform"
+      && entry.status === "success"
+      && entry.args?.transform_mode === "rotate"
+    ));
+  }, { count: beforeCount }, { timeout: 10000 });
+  const state = await getSummary();
+  record("R key view-axis rotation commits", state.selected_control === controlId && state.joint_rotation_overrides >= 1, state);
 }
 
 async function importSampleGlbAndValidateToeFallback() {

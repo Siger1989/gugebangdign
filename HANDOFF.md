@@ -2,6 +2,9 @@
 
 ## 2026-05-09 最新交接重点
 
+- `R` 键交互补齐为 Blender 风格：进入旋转模式后鼠标移动实时旋转；左键释放或 Enter 确认，右键或 Esc 取消。旋转时显示外圈、内圈、XYZ 彩色环和从控制器拖出的白色半径线。
+- 视口地面层增加了 XYZ 场景轴提示。
+- Walk_8F 会把 T-Pose 横向展开的手臂先约束到身体两侧附近，再应用走路摆臂；Pole 控制器会按当前角色前方重新放置为膝盖在前、手肘在后。
 - 控制器显示已经从调试盒子改成轻量 Control Rig：圆环、线段、三角 Pole、脚底/手腕面片。
 - `Labels` 默认关闭；打开后也只显示当前选中或鼠标悬停的控制器标签。
 - 右上视图控制增加了模型透明、骨架透明、控制器透明、控制器大小、控制器线粗。
@@ -10,7 +13,7 @@
 - `COG_CTRL` / `Root_CTRL` / `Global_CTRL` 旋转现在会驱动 Hips 分支，腰部/重心控制器能扭动身体。
 - IK Pole 默认规则：膝盖 Pole 在角色前方，手肘 Pole 在角色后方。
 - Walk_8F 模板不再因为未手动确认角色前方而失败；如果未确认，会使用当前前方并自动标记 confirmed。
-- 最新验证：`npm run validate:import` 通过，截图 `artifacts/screenshots/pipeline_acceptance_20260509_075300Z.png`。
+- 最新验证：`npm run validate:import` 通过，截图 `artifacts/screenshots/pipeline_acceptance_20260509_082721Z.png`。
 
 ## 项目定位
 

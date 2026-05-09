@@ -1,5 +1,42 @@
 # CURRENT_STATE
 
+## Blender Rotate Interaction And Walk Relaxed Arms - 2026-05-09
+
+Current objective:
+- Make keyboard transform behavior closer to Blender and make Walk_8F adapt from imported T-Pose models without leaving arms stretched sideways.
+
+Current progress:
+- Fixed `R` interaction so left-drag no longer immediately confirms. `R` now enters transform mode, mouse movement rotates live, and left mouse release / Enter commits through `set_control_transform`; right mouse / Esc cancels.
+- Added rotate-mode visual feedback:
+  - XYZ colored rotation rings.
+  - white outer view-axis ring.
+  - smaller inner view-axis ring.
+  - live white drag radius line from selected control to current pointer.
+  - X/Y/Z labels on the active gizmo.
+- Added a visible scene XYZ axis triad on the ground layer.
+- Walk_8F now relaxes hand IK targets from T-Pose into a side-of-body arm pose before applying forward/back arm swing.
+- Walk_8F now repositions Pole controls before solving limbs so knees stay forward and elbows stay behind relative to current character-forward basis.
+- Added Playwright coverage for a real `R` key + mouse move + left-release rotation commit.
+
+Files changed:
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Validation result: PASS
+
+Validation details:
+- `node --check app.js`: PASS.
+- `node --check scripts\validate_demo_import.mjs`: PASS.
+- `npm run check`: PASS.
+- `npm run validate:import`: PASS.
+- Latest screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_082721Z.png`
+
+Next step:
+- Hard refresh `http://localhost:8780/`.
+- Select `COG_CTRL`, press `R`, move the mouse without clicking or left-drag from the control; a white radius line should appear and the body should rotate around the current view axis. Release left mouse or press Enter to confirm.
+
 ## Blender-Style Control Rig Usability Pass - 2026-05-09
 
 Current objective:

@@ -26,10 +26,11 @@ const ikGroup = new THREE.Group();
 const gizmoGroup = new THREE.Group();
 const pathGroup = new THREE.Group();
 const directionGroup = new THREE.Group();
+const worldAxesGroup = new THREE.Group();
 const labelGroup = new THREE.Group();
 const validationGroup = new THREE.Group();
 scene.add(root);
-root.add(modelGroup, sourceSkeletonGroup, skeletonGroup, ikGroup, gizmoGroup, pathGroup, directionGroup, labelGroup, validationGroup);
+root.add(modelGroup, sourceSkeletonGroup, skeletonGroup, ikGroup, gizmoGroup, pathGroup, directionGroup, worldAxesGroup, labelGroup, validationGroup);
 
 const hemi = new THREE.HemisphereLight(0xffffff, 0x2a3442, 1.55);
 scene.add(hemi);
@@ -322,6 +323,11 @@ const Runtime = {
   transformPlane: null,
   transformFinalValue: null,
   transformAxis: null,
+  transformCurrentPointer: null,
+  transformPointerDown: false,
+  transformPointerMoved: false,
+  transformPointerStart: null,
+  transformPointerId: null,
   hoveredControlId: null,
   hoveredJointName: null,
   selectedTimelineFrames: [],
@@ -1995,10 +2001,13 @@ function applyWalkControlsToRig(params, poseIndex, basis = getRigBasis()) {
   setRigControlRotation("Pelvis_CTRL", [phase * 0.035, phase * 0.085, -phase * 0.045]);
   setRigControlRotation("Chest_CTRL", [-phase * 0.018, -phase * 0.06, phase * 0.024]);
   setRigControlRotation("Head_CTRL", [0, -phase * 0.018, 0]);
+  ["R_Knee_Pole", "L_Knee_Pole", "R_Elbow_Pole", "L_Elbow_Pole"].forEach((controlId) => {
+    setWalkPoleControl(controlId, basis);
+  });
   setLimbIkControl("R_Foot_IK", baseControls, basis, params.rFootZ || 0, params.rFootY || 0, Boolean(params.lock?.R));
   setLimbIkControl("L_Foot_IK", baseControls, basis, params.lFootZ || 0, params.lFootY || 0, Boolean(params.lock?.L));
-  setLimbIkControl("R_Hand_IK", baseControls, basis, params.rHandZ || 0, -0.025, false);
-  setLimbIkControl("L_Hand_IK", baseControls, basis, params.lHandZ || 0, -0.025, false);
+  setWalkHandIkControl("R_Hand_IK", "R", basis, params.rHandZ || 0, phase);
+  setWalkHandIkControl("L_Hand_IK", "L", basis, params.lHandZ || 0, phase);
 }
 
 function setLimbIkControl(controlId, baseControls, basis, forwardOffset, upOffset, locked) {
@@ -2027,6 +2036,36 @@ function setRigControlPosition(controlId, position, locked = false) {
   if (synced) {
     synced.locked = locked;
   }
+}
+
+function setWalkPoleControl(controlId, basis = getRigBasis()) {
+  const control = MotionState.ik_controls.find((item) => item.id === controlId);
+  const def = getControlDef(controlId);
+  const joint = def ? getJoint(def.joint) : null;
+  if (!control || !def || !joint) {
+    return;
+  }
+  const position = addVec(joint.position, getIkControlWorldOffset(def, basis));
+  setRigControlPosition(controlId, position, false);
+}
+
+function setWalkHandIkControl(controlId, side, basis = getRigBasis(), forwardOffset = 0, phase = 1) {
+  const hips = getJoint("Hips");
+  if (!hips) {
+    return;
+  }
+  const sideSign = side === "R" ? 1 : -1;
+  const relaxedTarget = new THREE.Vector3().fromArray(hips.position)
+    .addScaledVector(basis.right, sideSign * 0.36 * basis.scale)
+    .addScaledVector(basis.up, -0.10 * basis.scale)
+    .addScaledVector(basis.forward, forwardOffset * basis.scale);
+  setRigControlPosition(controlId, relaxedTarget.toArray(), false);
+  const rotation = [
+    phase * 0.035,
+    sideSign * 0.06,
+    -sideSign * phase * 0.045,
+  ];
+  setRigControlRotation(controlId, rotation);
 }
 
 function setRigControlRotation(controlId, rotation) {
@@ -3058,6 +3097,7 @@ function renderSceneObjects() {
   clearGroup(gizmoGroup);
   clearGroup(pathGroup);
   clearGroup(directionGroup);
+  clearGroup(worldAxesGroup);
   clearGroup(labelGroup);
   clearGroup(validationGroup);
 
@@ -3068,6 +3108,7 @@ function renderSceneObjects() {
   renderSourceSkeletonOverlay();
   renderSkeleton();
   renderDirectionHint();
+  renderWorldAxes();
   renderIkControls();
   renderTransformGizmo();
   renderMotionPaths();
@@ -3557,12 +3598,21 @@ function renderTransformGizmo() {
   axes.forEach((axis) => {
     if (mode === "rotate") {
       gizmoGroup.add(createGizmoRing(position, axis.vector, size * 0.88, axis.color));
+      gizmoGroup.add(makeLabel(axis.label, position.clone().addScaledVector(axis.vector.clone().normalize(), size * 1.05).toArray(), `#${axis.color.toString(16).padStart(6, "0")}`, 0.032, 0.82));
     } else if (mode === "scale") {
       gizmoGroup.add(createGizmoScaleAxis(position, axis.vector, size, axis.color));
+      gizmoGroup.add(makeLabel(axis.label, position.clone().addScaledVector(axis.vector.clone().normalize(), size * 1.1).toArray(), `#${axis.color.toString(16).padStart(6, "0")}`, 0.032, 0.82));
     } else {
       gizmoGroup.add(createGizmoTranslateAxis(position, axis.vector, size, axis.color));
+      gizmoGroup.add(makeLabel(axis.label, position.clone().addScaledVector(axis.vector.clone().normalize(), size * 1.12).toArray(), `#${axis.color.toString(16).padStart(6, "0")}`, 0.032, 0.82));
     }
   });
+  if (mode === "rotate") {
+    const viewAxis = getCameraViewAxis();
+    gizmoGroup.add(createGizmoRing(position, viewAxis, size * 1.18, 0xffffff, 0.92, 0.006));
+    gizmoGroup.add(createGizmoRing(position, viewAxis, size * 0.55, 0xffffff, 0.72, 0.004));
+    renderRotationDragGuide(position, viewAxis);
+  }
 }
 
 function createGizmoTranslateAxis(origin, axis, length, color) {
@@ -3589,12 +3639,38 @@ function createGizmoScaleAxis(origin, axis, length, color) {
   return group;
 }
 
-function createGizmoRing(origin, axis, radius, color) {
-  const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.82, depthTest: false });
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.004, 8, 72), material);
+function createGizmoRing(origin, axis, radius, color, opacity = 0.82, tube = 0.004) {
+  const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthTest: false });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, tube, 8, 72), material);
   ring.position.copy(origin);
   ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis.clone().normalize());
   return ring;
+}
+
+function renderRotationDragGuide(origin, viewAxis) {
+  const pointer = Runtime.transformCurrentPointer || Runtime.lastPointer;
+  if (!Runtime.transformMode || Runtime.transformMode !== "rotate" || !pointer) {
+    return;
+  }
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(viewAxis.clone().normalize(), origin);
+  const pointerPoint = getPointerPlanePointFromScreen(pointer.x, pointer.y, plane);
+  if (!pointerPoint || pointerPoint.distanceTo(origin) < 0.015) {
+    return;
+  }
+  const material = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.86, depthTest: false });
+  const line = createWorldSegment(origin, pointerPoint, 0.006, material);
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.022, 12, 8), material.clone());
+  dot.position.copy(pointerPoint);
+  gizmoGroup.add(line, dot);
+}
+
+function createWorldSegment(start, end, radius, material) {
+  const delta = end.clone().sub(start);
+  const length = delta.length();
+  const segment = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 8), material);
+  segment.position.copy(start).add(end).multiplyScalar(0.5);
+  segment.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
+  return segment;
 }
 
 function renderMotionPaths() {
@@ -3663,6 +3739,23 @@ function renderDirectionHint() {
   directionGroup.add(shaft, head);
   const label = MotionState.direction?.confirmed ? "角色前方" : "待确认前方";
   labelGroup.add(makeLabel(label, end.clone().addScaledVector(basis.up, 0.11 * basis.scale).toArray(), COLORS.warn, 0.04, 0.68));
+}
+
+function renderWorldAxes() {
+  if (!MotionState.show.ground_plane) {
+    return;
+  }
+  const origin = new THREE.Vector3(0, 0.025, 0);
+  const length = Math.max(0.48 * getRigBasis().scale, 0.34);
+  [
+    { label: "X", color: 0xff4242, axis: new THREE.Vector3(1, 0, 0) },
+    { label: "Y", color: 0x49e85f, axis: new THREE.Vector3(0, 1, 0) },
+    { label: "Z", color: 0x3d6dff, axis: new THREE.Vector3(0, 0, 1) },
+  ].forEach((item) => {
+    worldAxesGroup.add(createGizmoTranslateAxis(origin, item.axis, length, item.color));
+    const labelPosition = origin.clone().addScaledVector(item.axis, length * 1.12);
+    worldAxesGroup.add(makeLabel(item.label, labelPosition.toArray(), `#${item.color.toString(16).padStart(6, "0")}`, 0.034, 0.78));
+  });
 }
 
 function renderUi() {
@@ -4561,7 +4654,12 @@ function onPointerDown(event) {
     if (event.button === 2) {
       cancelKeyboardTransform();
     } else if (event.button === 0) {
-      finishKeyboardTransform();
+      Runtime.transformPointerDown = true;
+      Runtime.transformPointerMoved = false;
+      Runtime.transformPointerStart = { x: event.clientX, y: event.clientY };
+      Runtime.transformCurrentPointer = { x: event.clientX, y: event.clientY };
+      Runtime.transformPointerId = event.pointerId;
+      canvas.setPointerCapture?.(event.pointerId);
     }
     return;
   }
@@ -4852,9 +4950,13 @@ function finishJointDrag() {
 }
 
 function getPointerPlanePoint(event, plane) {
+  return getPointerPlanePointFromScreen(event.clientX, event.clientY, plane);
+}
+
+function getPointerPlanePointFromScreen(clientX, clientY, plane) {
   const rect = canvas.getBoundingClientRect();
-  pointerNdc.x = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
-  pointerNdc.y = -(((event.clientY - rect.top) / Math.max(rect.height, 1)) * 2 - 1);
+  pointerNdc.x = ((clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
+  pointerNdc.y = -(((clientY - rect.top) / Math.max(rect.height, 1)) * 2 - 1);
   raycaster.setFromCamera(pointerNdc, camera);
   const point = new THREE.Vector3();
   return raycaster.ray.intersectPlane(plane, point) ? point : null;
@@ -4900,6 +5002,11 @@ function onPointerMove(event) {
   const currentPointer = { x: event.clientX, y: event.clientY };
   if (Runtime.transformMode) {
     Runtime.lastPointer = currentPointer;
+    Runtime.transformCurrentPointer = currentPointer;
+    if (Runtime.transformPointerDown && Runtime.transformPointerStart) {
+      Runtime.transformPointerMoved = Runtime.transformPointerMoved
+        || Math.hypot(event.clientX - Runtime.transformPointerStart.x, event.clientY - Runtime.transformPointerStart.y) > 2;
+    }
     event.preventDefault();
     updateKeyboardTransform(event);
     return;
@@ -4952,6 +5059,13 @@ function onPointerMove(event) {
 
 function onPointerUp(event) {
   if (Runtime.transformMode) {
+    if (Runtime.transformPointerDown && event.button === 0) {
+      event.preventDefault();
+      if (canvas.hasPointerCapture?.(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+      finishKeyboardTransform();
+    }
     return;
   }
   if (Runtime.navigationMode === "ik_control") {
@@ -5012,6 +5126,7 @@ function startKeyboardTransform(mode) {
   }
   Runtime.transformMode = mode;
   const screenCenter = getWorldScreenPosition(control.position);
+  MotionState.transform.axis = null;
   Runtime.transformSubject = {
     control_id: control.id,
     joint: control.target_joint,
@@ -5024,7 +5139,13 @@ function startKeyboardTransform(mode) {
   Runtime.transformStartPointer = { ...Runtime.lastPointer };
   Runtime.transformFinalValue = null;
   Runtime.transformAxis = MotionState.transform.axis;
+  Runtime.transformCurrentPointer = { ...Runtime.lastPointer };
+  Runtime.transformPointerDown = false;
+  Runtime.transformPointerMoved = false;
+  Runtime.transformPointerStart = null;
+  Runtime.transformPointerId = null;
   MotionState.transform.tool = mode;
+  renderAll();
 }
 
 function updateKeyboardTransform(event) {
@@ -5160,6 +5281,11 @@ function finishKeyboardTransform() {
   Runtime.transformStartSnapshot = null;
   Runtime.transformStartPointer = null;
   Runtime.transformFinalValue = null;
+  Runtime.transformCurrentPointer = null;
+  Runtime.transformPointerDown = false;
+  Runtime.transformPointerMoved = false;
+  Runtime.transformPointerStart = null;
+  Runtime.transformPointerId = null;
   if (!mode || !subject || !value || !snapshot) {
     renderAll();
     return;
@@ -5181,6 +5307,11 @@ function cancelKeyboardTransform() {
   Runtime.transformStartSnapshot = null;
   Runtime.transformStartPointer = null;
   Runtime.transformFinalValue = null;
+  Runtime.transformCurrentPointer = null;
+  Runtime.transformPointerDown = false;
+  Runtime.transformPointerMoved = false;
+  Runtime.transformPointerStart = null;
+  Runtime.transformPointerId = null;
   if (snapshot) {
     restoreCoreState(snapshot);
   }
