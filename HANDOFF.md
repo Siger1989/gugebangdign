@@ -263,10 +263,12 @@ Walk_8F 模板姿势：
 - 程序会读取 glTF skin / joints。
 - 生成源骨骼列表。
 - 自动尝试映射到 `Humanoid_v1`。
+- `R_Toe` / `L_Toe` 是可选映射；如果导入模型没有独立脚尖骨骼，只要核心关节完整，程序会按脚掌、腿部和角色前方自动补出脚尖点。此时 `17 / 19（脚尖自动补）` 可以继续创建 IK 和 Walk_8F。
 - Walk_8F 和 IK 不是控制一套孤立默认骨架，而是通过映射驱动导入模型自己的源骨骼。
 - 导入模型初始方向只作为推断值，`Walk_8F` 应用前必须在骨架阶段确认角色前方。
 - `前后反转` 会切换 `MotionState.direction.forward_sign`，并清空旧关键帧，避免复用错误方向动作。
-- 导出的 Motion JSON 包含 `direction`，重新导入时会恢复前方方向状态。
+- 如果自动推断的前方轴本身有角度偏差，可用骨架面板里的角度滑杆或 `左转15°` / `右转15°` 修正；这个角度保存在 `MotionState.direction.yaw_degrees`。
+- 导出的 Motion JSON 包含 `direction.forward_sign`、`direction.yaw_degrees`、`direction.confirmed`，重新导入时会恢复前方方向状态。
 
 已验证示例：
 
@@ -334,6 +336,7 @@ npm run validate:import
 
 - `npm run check`：PASS。
 - `npm run validate:import`：PASS。
+- 导入 `sample_models/stylized_3d_character_model.glb` 后，`17 / 19` 映射会通过脚尖 fallback 创建 Humanoid_v1、9 个核心 IK、19 个关节控制器和 8 个 Walk_8F 关键帧。
 - 导入 GLB 后，未确认角色前方时应用 Walk_8F 会被阻止并给出明确错误。
 - 确认角色前方后，Walk_8F 可正常创建 8 个关键帧。
 - `前后反转` 会清空旧关键帧，等待重新应用方向正确的 Walk_8F。

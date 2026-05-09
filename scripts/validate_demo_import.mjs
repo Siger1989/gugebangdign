@@ -5,6 +5,7 @@ import { chromium } from "playwright-core";
 const edgePath = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 const url = "http://localhost:8780/index.html";
 const screenshotDir = resolve("artifacts/screenshots");
+const sampleGlbPath = resolve("sample_models/stylized_3d_character_model.glb");
 await mkdir(screenshotDir, { recursive: true });
 const screenshotPath = resolve(screenshotDir, `pipeline_acceptance_${timestamp()}.png`);
 
@@ -102,6 +103,8 @@ try {
     record(`command_log records ${name}`, Boolean(entry), entry || null);
   });
 
+  await importSampleGlbAndValidateToeFallback();
+
   await page.screenshot({ path: screenshotPath, fullPage: false });
 } finally {
   await browser.close();
@@ -120,15 +123,73 @@ if (result.failed) {
 }
 
 async function clickAndExpect(selector, commandName, predicate) {
+  const beforeCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
   await page.click(selector);
-  await page.waitForFunction((name) => {
+  await page.waitForFunction(({ name, count }) => {
     const log = window.__motionDebug?.getCommandLog?.() || [];
-    return log.some((entry) => entry.name === name);
-  }, commandName, { timeout: 10000 });
+    return log.slice(count).some((entry) => entry.name === name);
+  }, { name: commandName, count: beforeCount }, { timeout: 10000 });
   const state = await getSummary();
   const logEntry = await getLastCommand(commandName);
   record(`${commandName} status success`, logEntry?.status === "success", logEntry);
   record(`${commandName} state expectation`, Boolean(predicate(state)), state);
+}
+
+async function executeCommandAndExpect(commandName, args, predicate) {
+  const beforeCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.evaluate(({ name, commandArgs }) => window.__motionDebug.executeCommandByName(name, commandArgs), {
+    name: commandName,
+    commandArgs: args,
+  });
+  await page.waitForFunction(({ name, count }) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => entry.name === name);
+  }, { name: commandName, count: beforeCount }, { timeout: 10000 });
+  const state = await getSummary();
+  const logEntry = await getLastCommand(commandName);
+  record(`${commandName} status success`, logEntry?.status === "success", logEntry);
+  record(`${commandName} state expectation`, Boolean(predicate(state)), state);
+}
+
+async function importSampleGlbAndValidateToeFallback() {
+  const beforeCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.locator("#modelFileInput").setInputFiles(sampleGlbPath);
+  await page.waitForFunction((count) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => entry.name === "import_glb");
+  }, beforeCount, { timeout: 20000 });
+
+  const importLog = await getLastCommand("import_glb");
+  const imported = await getSummary();
+  record("sample GLB import succeeds", importLog?.status === "success" && imported.model === "Loaded", {
+    importLog,
+    imported,
+  });
+  record("sample GLB has no missing required humanoid mapping", (imported.missing_required_mapping || []).length === 0, imported);
+
+  await clickAndExpect("#createSkeletonButton", "create_humanoid_skeleton", (state) => (
+    state.skeleton === "Humanoid_v1"
+    && state.joints === 19
+    && (state.missing_required_mapping || []).length === 0
+  ));
+
+  const humanoidState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const fallbackJoints = humanoidState.joints
+    .filter((joint) => joint.is_optional_fallback)
+    .map((joint) => joint.name);
+  record("optional unmapped joints become fallback joints", (
+    (imported.optional_fallback_mapping || []).length === 0
+    || fallbackJoints.length === (imported.optional_fallback_mapping || []).length
+  ), {
+    imported_optional_fallback_mapping: imported.optional_fallback_mapping,
+    fallbackJoints,
+  });
+
+  await executeCommandAndExpect("set_character_direction", { forward_sign: 1, yaw_degrees: 0, confirmed: true }, (state) => state.direction?.confirmed === true);
+  await clickAndExpect("#createIkButton", "create_ik_controls", (state) => (
+    state.ik_controls === 9 && state.joint_controls === 19
+  ));
+  await clickAndExpect("#applyWalkButton", "apply_motion_template", (state) => state.keyframes === 8);
 }
 
 async function ensureDom(label, fn) {

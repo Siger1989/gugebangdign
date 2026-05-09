@@ -172,6 +172,13 @@
           <strong id="characterForwardValue">自动推断</strong>
           <button id="confirmForwardButton" type="button">确认当前前方</button>
           <button id="flipForwardButton" type="button">前后反转</button>
+          <span>角度</span>
+          <label class="direction-angle">
+            <input id="forwardAngleInput" type="range" min="-180" max="180" step="1" value="0">
+            <strong id="forwardAngleValue">0°</strong>
+          </label>
+          <button id="rotateForwardLeftButton" type="button">左转15°</button>
+          <button id="rotateForwardRightButton" type="button">右转15°</button>
         </div>
         <div class="mapping-workspace" aria-label="T-Pose 骨骼映射">
           <div class="mapping-column">

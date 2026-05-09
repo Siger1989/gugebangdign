@@ -80,6 +80,8 @@ const HUMANOID_JOINT_NAMES = [
   "L_Toe",
 ];
 
+const OPTIONAL_HUMANOID_MAPPING_JOINTS = new Set(["R_Toe", "L_Toe"]);
+
 const HUMANOID_BONE_CONNECTIONS = [
   ["Hips", "Spine"],
   ["Spine", "Chest"],
@@ -182,7 +184,7 @@ const COMMAND_SCHEMAS = {
   import_glb: { type: "object", properties: { file: { type: "File" } } },
   create_humanoid_skeleton: { type: "object", properties: { skeleton_id: { const: "Humanoid_v1" } } },
   assign_humanoid_mapping: { type: "object", properties: { joint: { type: "string" }, source_bone_id: { type: "string" } }, required: ["joint", "source_bone_id"] },
-  set_character_direction: { type: "object", properties: { forward_sign: { enum: [1, -1] }, confirmed: { type: "boolean" } } },
+  set_character_direction: { type: "object", properties: { forward_sign: { enum: [1, -1] }, yaw_degrees: { type: "number" }, confirmed: { type: "boolean" } } },
   create_source_skeleton_from_import: { type: "object", properties: { mode: { const: "visual_overlay_tpose" } } },
   create_ik_controls: { type: "object", properties: { rig: { const: "Humanoid_v1" } } },
   apply_motion_template: { type: "object", properties: { template_id: { enum: ["walk_cycle_8f"] } }, required: ["template_id"] },
@@ -217,7 +219,7 @@ const MotionState = {
   rest_pose: "T-Pose",
   source_bones: [],
   humanoid_mapping: {},
-  direction: { forward_sign: 1, confirmed: false },
+  direction: { forward_sign: 1, yaw_degrees: 0, confirmed: false },
   import_diagnostics: createEmptyImportDiagnostics(),
   visual_analysis: { status: "Not run", method: null, source_bones: 0, generated_joints: 0, generated_bones: 0, model_opacity: null },
   skeleton: null,
@@ -308,6 +310,8 @@ const el = {
   selectedBoneSelect: document.querySelector("#selectedBoneSelect"),
   selectedControlSelect: document.querySelector("#selectedControlSelect"),
   characterForwardValue: document.querySelector("#characterForwardValue"),
+  forwardAngleInput: document.querySelector("#forwardAngleInput"),
+  forwardAngleValue: document.querySelector("#forwardAngleValue"),
   sourceBoneCountValue: document.querySelector("#sourceBoneCountValue"),
   restPoseValue: document.querySelector("#restPoseValue"),
   mappingCountValue: document.querySelector("#mappingCountValue"),
@@ -391,13 +395,28 @@ function bindUi() {
   document.querySelector("#confirmForwardButton").addEventListener("click", () => {
     executeCommand(createCommand("set_character_direction", {
       forward_sign: MotionState.direction.forward_sign,
+      yaw_degrees: MotionState.direction.yaw_degrees,
       confirmed: true,
     }));
   });
   document.querySelector("#flipForwardButton").addEventListener("click", () => {
     executeCommand(createCommand("set_character_direction", {
       forward_sign: MotionState.direction.forward_sign === 1 ? -1 : 1,
+      yaw_degrees: MotionState.direction.yaw_degrees,
       confirmed: true,
+    }));
+  });
+  document.querySelector("#rotateForwardLeftButton").addEventListener("click", () => {
+    adjustForwardYaw(-15);
+  });
+  document.querySelector("#rotateForwardRightButton").addEventListener("click", () => {
+    adjustForwardYaw(15);
+  });
+  el.forwardAngleInput.addEventListener("change", () => {
+    executeCommand(createCommand("set_character_direction", {
+      forward_sign: MotionState.direction.forward_sign,
+      yaw_degrees: Number(el.forwardAngleInput.value),
+      confirmed: false,
     }));
   });
   document.querySelector("#createIkButton").addEventListener("click", () => {
@@ -540,6 +559,14 @@ function bindUi() {
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 }
 
+function adjustForwardYaw(deltaDegrees) {
+  executeCommand(createCommand("set_character_direction", {
+    forward_sign: MotionState.direction.forward_sign,
+    yaw_degrees: normalizeForwardYaw((MotionState.direction.yaw_degrees || 0) + deltaDegrees),
+    confirmed: false,
+  }));
+}
+
 function createCommand(name, args = {}, options = {}) {
   return {
     name,
@@ -614,7 +641,7 @@ const COMMAND_EXECUTORS = {
     MotionState.model = { loaded: true, source: "Test Dummy", type: "test_dummy", opacity: MotionState.model.opacity };
     MotionState.source_bones = [];
     MotionState.humanoid_mapping = {};
-    MotionState.direction = { forward_sign: 1, confirmed: true };
+    MotionState.direction = { forward_sign: 1, yaw_degrees: 0, confirmed: true };
     MotionState.selected_source_bone_id = null;
     MotionState.import_diagnostics = createEmptyImportDiagnostics();
     MotionState.visual_analysis = createEmptyVisualAnalysis();
@@ -638,7 +665,7 @@ const COMMAND_EXECUTORS = {
     MotionState.model = { loaded: true, source: file.name, type: "glb_reference", opacity: MotionState.model.opacity };
     MotionState.source_bones = extractSourceBones(Runtime.importedModelScene);
     MotionState.humanoid_mapping = autoMapHumanoidBones(MotionState.source_bones);
-    MotionState.direction = { forward_sign: inferInitialForwardSign(), confirmed: false };
+    MotionState.direction = { forward_sign: inferInitialForwardSign(), yaw_degrees: 0, confirmed: false };
     MotionState.selected_source_bone_id = MotionState.source_bones[0]?.id || null;
     MotionState.import_diagnostics = {
       ...importDiagnostics,
@@ -744,7 +771,7 @@ const COMMAND_EXECUTORS = {
       previous_opacity: previousOpacity,
     };
     MotionState.dirty_state = true;
-    Runtime.stage = getMappingCount() === HUMANOID_JOINT_NAMES.length ? "ik" : "skeleton";
+    Runtime.stage = hasRequiredHumanoidMapping() ? "ik" : "skeleton";
     return {
       message: `已根据导入 T-Pose 骨骼生成适配骨架：${joints.length} 个关节点 / ${bones.length} 根骨骼`,
       source_bones: MotionState.source_bones.length,
@@ -766,6 +793,7 @@ const COMMAND_EXECUTORS = {
       direction: MotionState.direction,
       mapping_source: MotionState.source_bones.length > 0 ? "imported_tpose" : "default_tpose",
       mapped_joints: mappedCount,
+      optional_fallback_joints: getOptionalFallbackHumanoidMappings(),
       color_rule: {
         R: "暖色",
         L: "冷色",
@@ -780,7 +808,13 @@ const COMMAND_EXECUTORS = {
     MotionState.dirty_state = true;
     syncSourceRigToMotionState();
     Runtime.stage = "ik";
-    return { message: "已创建 Humanoid_v1 人形骨架", joints: joints.length, bones: bones.length, mapped: mappedCount };
+    return {
+      message: "已创建 Humanoid_v1 人形骨架",
+      joints: joints.length,
+      bones: bones.length,
+      mapped: mappedCount,
+      optional_fallback_joints: getOptionalFallbackHumanoidMappings(),
+    };
   },
 
   assign_humanoid_mapping: async ({ joint, source_bone_id }) => {
@@ -1098,10 +1132,13 @@ const COMMAND_EXECUTORS = {
     return { message: `已选中控制器 ${selected ? translateControlName(selected.id) : "无"}` };
   },
 
-  set_character_direction: async ({ forward_sign, confirmed = true }) => {
+  set_character_direction: async ({ forward_sign, yaw_degrees = MotionState.direction?.yaw_degrees || 0, confirmed = true }) => {
     const sign = Number(forward_sign) === -1 ? -1 : 1;
-    MotionState.direction = { forward_sign: sign, confirmed: Boolean(confirmed) };
-    if (MotionState.skeleton) {
+    const yaw = normalizeForwardYaw(yaw_degrees);
+    MotionState.direction = { forward_sign: sign, yaw_degrees: yaw, confirmed: Boolean(confirmed) };
+    if (MotionState.skeleton?.id === "Humanoid_v1") {
+      rebuildHumanoidSkeletonFromMapping();
+    } else if (MotionState.skeleton) {
       MotionState.skeleton.direction = MotionState.direction;
     }
     if (MotionState.skeleton?.id === "Humanoid_v1" && MotionState.ik_controls.length > 0) {
@@ -1113,8 +1150,9 @@ const COMMAND_EXECUTORS = {
     MotionState.validation_report = createEmptyValidationReport();
     MotionState.dirty_state = true;
     return {
-      message: sign === 1 ? "已确认当前角色前方" : "已前后反转角色方向",
+      message: formatDirectionCommandMessage(sign, yaw, MotionState.direction.confirmed),
       forward_sign: sign,
+      yaw_degrees: yaw,
       confirmed: MotionState.direction.confirmed,
     };
   },
@@ -1455,6 +1493,22 @@ function getMappingCount() {
   return HUMANOID_JOINT_NAMES.filter((name) => MotionState.humanoid_mapping[name]).length;
 }
 
+function getMissingHumanoidMappings({ includeOptional = true } = {}) {
+  return HUMANOID_JOINT_NAMES.filter((name) => (
+    !MotionState.humanoid_mapping[name]
+    && (includeOptional || !OPTIONAL_HUMANOID_MAPPING_JOINTS.has(name))
+  ));
+}
+
+function getOptionalFallbackHumanoidMappings() {
+  return getMissingHumanoidMappings()
+    .filter((name) => OPTIONAL_HUMANOID_MAPPING_JOINTS.has(name));
+}
+
+function hasRequiredHumanoidMapping() {
+  return getMissingHumanoidMappings({ includeOptional: false }).length === 0;
+}
+
 function getBoneNameForJoint(joint) {
   if (joint === "Hips") return "Spine";
   if (joint === "Head") return "Head";
@@ -1565,16 +1619,107 @@ function createEstimatedHumanoidSkeletonFromModel() {
   };
 }
 
+function getPositionMapVector(positionByName, name) {
+  return new THREE.Vector3().fromArray(positionByName.get(name) || HUMANOID_REST_POSITIONS[name]);
+}
+
+function estimateHumanoidBasisFromPositions(positionByName) {
+  const fallbackRight = new THREE.Vector3(1, 0, 0);
+  const fallbackUp = new THREE.Vector3(0, 1, 0);
+  const fallbackForward = new THREE.Vector3(0, 0, 1);
+  const hips = getPositionMapVector(positionByName, "Hips");
+  let up = getPositionMapVector(positionByName, "Head").sub(hips);
+  if (up.length() < 0.001) {
+    up = getPositionMapVector(positionByName, "Chest").sub(hips);
+  }
+  if (up.length() < 0.001) {
+    up = fallbackUp.clone();
+  }
+  up.normalize();
+
+  let right = new THREE.Vector3();
+  [
+    ["R_Hand", "L_Hand"],
+    ["R_Forearm", "L_Forearm"],
+    ["R_UpperArm", "L_UpperArm"],
+    ["R_Foot", "L_Foot"],
+    ["R_UpperLeg", "L_UpperLeg"],
+  ].forEach(([rightName, leftName]) => {
+    const sideDelta = getPositionMapVector(positionByName, rightName).sub(getPositionMapVector(positionByName, leftName));
+    const planar = projectOntoPlane(sideDelta, up);
+    if (planar.length() > 0.001) {
+      right.add(planar.normalize());
+    }
+  });
+  right = projectOntoPlane(right.length() > 0.001 ? right : fallbackRight.clone(), up);
+  if (right.length() < 0.001) {
+    right = fallbackRight.clone();
+  }
+  right.normalize();
+
+  let forward = right.clone().cross(up);
+  if (forward.length() < 0.001) {
+    forward = fallbackForward.clone();
+  }
+  forward.normalize();
+  if (MotionState.direction?.forward_sign === -1) {
+    forward.negate();
+  }
+  const yawOffset = getDirectionYawRadians();
+  if (Math.abs(yawOffset) > 0.000001) {
+    forward.applyAxisAngle(up, yawOffset).normalize();
+  }
+  right = up.clone().cross(forward);
+  if (right.length() < 0.001) {
+    right = fallbackRight.clone();
+  }
+  right.normalize();
+  return { right, up, forward };
+}
+
+function applyOptionalHumanoidFallbackPositions(positionByName) {
+  if (MotionState.source_bones.length === 0) {
+    return;
+  }
+  const basis = estimateHumanoidBasisFromPositions(positionByName);
+  ["R", "L"].forEach((side) => {
+    const toeName = `${side}_Toe`;
+    if (MotionState.humanoid_mapping[toeName]) {
+      return;
+    }
+    const foot = getPositionMapVector(positionByName, `${side}_Foot`);
+    const lowerLeg = getPositionMapVector(positionByName, `${side}_LowerLeg`);
+    const toeLength = Math.max(foot.distanceTo(lowerLeg) * 0.28, 0.04);
+    const toe = foot.clone()
+      .addScaledVector(basis.forward, toeLength)
+      .addScaledVector(basis.up, -toeLength * 0.08);
+    positionByName.set(toeName, toe.toArray());
+  });
+}
+
 function createHumanoidSkeletonData() {
   const sourceById = new Map(MotionState.source_bones.map((bone) => [bone.id, bone]));
-  const joints = HUMANOID_JOINT_NAMES.map((name) => ({
-    name,
-    side: getSide(name),
-    position: [...(sourceById.get(MotionState.humanoid_mapping[name])?.position || HUMANOID_REST_POSITIONS[name])],
-    source_bone_id: MotionState.humanoid_mapping[name] || null,
-    source_bone_name: sourceById.get(MotionState.humanoid_mapping[name])?.name || null,
-    rest_pose: MotionState.humanoid_mapping[name] ? MotionState.rest_pose : "Default T-Pose",
-  }));
+  const positionByName = new Map();
+  HUMANOID_JOINT_NAMES.forEach((name) => {
+    const sourceBone = sourceById.get(MotionState.humanoid_mapping[name]);
+    positionByName.set(name, [...(sourceBone?.position || HUMANOID_REST_POSITIONS[name])]);
+  });
+  applyOptionalHumanoidFallbackPositions(positionByName);
+  const joints = HUMANOID_JOINT_NAMES.map((name) => {
+    const sourceBone = sourceById.get(MotionState.humanoid_mapping[name]);
+    const isOptionalFallback = MotionState.source_bones.length > 0
+      && !sourceBone
+      && OPTIONAL_HUMANOID_MAPPING_JOINTS.has(name);
+    return {
+      name,
+      side: getSide(name),
+      position: [...positionByName.get(name)],
+      source_bone_id: MotionState.humanoid_mapping[name] || null,
+      source_bone_name: sourceBone?.name || null,
+      rest_pose: sourceBone ? MotionState.rest_pose : isOptionalFallback ? "Foot Fallback" : "Default T-Pose",
+      is_optional_fallback: isOptionalFallback,
+    };
+  });
   const bones = HUMANOID_BONE_CONNECTIONS.map(([parent, child]) => ({
     name: child,
     parent,
@@ -1601,6 +1746,7 @@ function rebuildHumanoidSkeletonFromMapping() {
     direction: MotionState.direction,
     mapping_source: MotionState.source_bones.length > 0 ? "imported_tpose" : "default_tpose",
     mapped_joints: getMappingCount(),
+    optional_fallback_joints: getOptionalFallbackHumanoidMappings(),
     color_rule: {
       R: "暖色",
       L: "冷色",
@@ -1732,6 +1878,20 @@ function inferInitialForwardSign() {
   return 1;
 }
 
+function normalizeForwardYaw(value) {
+  let degrees = Number(value);
+  if (!Number.isFinite(degrees)) {
+    degrees = 0;
+  }
+  while (degrees > 180) degrees -= 360;
+  while (degrees < -180) degrees += 360;
+  return Math.round(degrees);
+}
+
+function getDirectionYawRadians() {
+  return THREE.MathUtils.degToRad(normalizeForwardYaw(MotionState.direction?.yaw_degrees || 0));
+}
+
 function getRigBasis() {
   const fallbackRight = new THREE.Vector3(1, 0, 0);
   const fallbackUp = new THREE.Vector3(0, 1, 0);
@@ -1804,6 +1964,15 @@ function getRigBasis() {
   if (MotionState.direction?.forward_sign === -1) {
     forward.negate();
   }
+  const yawOffset = getDirectionYawRadians();
+  if (Math.abs(yawOffset) > 0.000001) {
+    forward.applyAxisAngle(up, yawOffset).normalize();
+  }
+  right = up.clone().cross(forward);
+  if (right.length() < 0.001) {
+    right = fallbackRight.clone();
+  }
+  right.normalize();
 
   const height = getRigHeight();
   return {
@@ -2836,6 +3005,11 @@ function renderUi() {
   el.controlOpacityInput.value = String(MotionState.visual_opacity.controls);
   el.controlOpacityValue.textContent = MotionState.visual_opacity.controls.toFixed(2);
   el.characterForwardValue.textContent = formatCharacterForwardState();
+  if (el.forwardAngleInput && el.forwardAngleValue) {
+    const yaw = normalizeForwardYaw(MotionState.direction?.yaw_degrees || 0);
+    el.forwardAngleInput.value = String(yaw);
+    el.forwardAngleValue.textContent = `${yaw}°`;
+  }
   el.timelineFrameSlider.value = String(MotionState.current_frame);
   el.timelineCurrentFrameValue.textContent = `${MotionState.current_frame} / ${MotionState.total_frames}`;
   document.querySelector("#showSkeletonLabels").checked = MotionState.show.skeleton_labels;
@@ -2903,13 +3077,19 @@ function renderMappingPanel() {
     : MotionState.import_diagnostics.skins === 0 && MotionState.model.loaded
       ? "无 glTF skin"
       : "未读取";
-  el.mappingCountValue.textContent = `${getMappingCount()} / ${HUMANOID_JOINT_NAMES.length}`;
+  const optionalFallbackCount = getOptionalFallbackHumanoidMappings().length;
+  el.mappingCountValue.textContent = optionalFallbackCount > 0 && hasRequiredHumanoidMapping()
+    ? `${getMappingCount()} / ${HUMANOID_JOINT_NAMES.length}（脚尖自动补）`
+    : `${getMappingCount()} / ${HUMANOID_JOINT_NAMES.length}`;
   el.humanoidJointList.innerHTML = HUMANOID_JOINT_NAMES.map((joint) => {
     const sourceBone = sourceById.get(MotionState.humanoid_mapping[joint]);
+    const isOptionalFallback = !sourceBone
+      && OPTIONAL_HUMANOID_MAPPING_JOINTS.has(joint)
+      && hasRequiredHumanoidMapping();
     return `
-      <div class="mapping-chip ${sourceBone ? "is-mapped" : ""}" draggable="true" data-humanoid-joint="${joint}">
+      <div class="mapping-chip ${sourceBone ? "is-mapped" : isOptionalFallback ? "is-fallback" : ""}" draggable="true" data-humanoid-joint="${joint}">
         <strong>${translateBoneName(joint)}</strong>
-        <span>${sourceBone ? sourceBone.name : "拖到右侧导入骨骼"}</span>
+        <span>${sourceBone ? sourceBone.name : isOptionalFallback ? "脚尖自动补位" : "拖到右侧导入骨骼"}</span>
       </div>
     `;
   }).join("");
@@ -3042,7 +3222,15 @@ function translateSkeletonId(id) {
 
 function formatCharacterForwardState() {
   const directionText = MotionState.direction?.forward_sign === -1 ? "已前后反转" : "使用当前前方";
-  return MotionState.direction?.confirmed ? `${directionText} / 已确认` : `${directionText} / 待确认`;
+  const yaw = normalizeForwardYaw(MotionState.direction?.yaw_degrees || 0);
+  const angleText = yaw === 0 ? "角度 0°" : `角度 ${yaw > 0 ? "+" : ""}${yaw}°`;
+  return MotionState.direction?.confirmed ? `${directionText} / ${angleText} / 已确认` : `${directionText} / ${angleText} / 待确认`;
+}
+
+function formatDirectionCommandMessage(sign, yaw, confirmed) {
+  const base = sign === 1 ? "当前前方" : "前后反转";
+  const angle = yaw === 0 ? "0°" : `${yaw > 0 ? "+" : ""}${yaw}°`;
+  return confirmed ? `已确认角色前方：${base}，角度 ${angle}` : `已调整角色前方角度：${base}，角度 ${angle}，请确认`;
 }
 
 function translateViewOption(key) {
@@ -3274,7 +3462,9 @@ function getLocalizedMotionStateSummary() {
     "源骨骼": MotionState.source_bones.length,
     "GLB skins": MotionState.import_diagnostics.skins,
     "GLB joints": MotionState.import_diagnostics.joints,
-    "人形映射": `${getMappingCount()} / ${HUMANOID_JOINT_NAMES.length}`,
+    "人形映射": getOptionalFallbackHumanoidMappings().length > 0 && hasRequiredHumanoidMapping()
+      ? `${getMappingCount()} / ${HUMANOID_JOINT_NAMES.length}（脚尖自动补）`
+      : `${getMappingCount()} / ${HUMANOID_JOINT_NAMES.length}`,
     "视觉辅助": translateVisualAnalysisStatus(MotionState.visual_analysis.status),
     "骨骼数": MotionState.bones.length,
     "关节数": MotionState.joints.length,
@@ -3344,12 +3534,15 @@ function ensureHumanoidSkeletonForAnimation() {
   if (MotionState.skeleton.id === "Humanoid_v1") {
     return;
   }
-  if (MotionState.source_bones.length > 0 && getMappingCount() === HUMANOID_JOINT_NAMES.length) {
+  if (MotionState.source_bones.length > 0 && hasRequiredHumanoidMapping()) {
     rebuildHumanoidSkeletonFromMapping();
     MotionState.selected_bone = MotionState.bones[0]?.name || null;
     return;
   }
-  throw new Error("IK 和 Walk_8F 需要完整 Humanoid_v1 映射；请先把 19 个标准关节点都绑定到导入骨骼。");
+  const missingRequired = getMissingHumanoidMappings({ includeOptional: false })
+    .map(translateBoneName)
+    .join("、");
+  throw new Error(`IK 和 Walk_8F 需要完整核心 Humanoid_v1 映射；请先绑定：${missingRequired || "核心关节点"}。脚尖缺失会自动补位，不会阻止创建 IK。`);
 }
 
 function requireCharacterDirectionConfirmed() {
@@ -4221,6 +4414,8 @@ function getMotionStateSummary() {
     glb_skins: MotionState.import_diagnostics.skins,
     glb_joints: MotionState.import_diagnostics.joints,
     humanoid_mapping: getMappingCount(),
+    missing_required_mapping: getMissingHumanoidMappings({ includeOptional: false }),
+    optional_fallback_mapping: getOptionalFallbackHumanoidMappings(),
     visual_analysis: MotionState.visual_analysis.status,
     bones: MotionState.bones.length,
     joints: MotionState.joints.length,
@@ -4271,6 +4466,8 @@ function getSourceRigDebug() {
   });
   return {
     mapped_count: getMappingCount(),
+    missing_required_mapping: getMissingHumanoidMappings({ includeOptional: false }),
+    optional_fallback_mapping: getOptionalFallbackHumanoidMappings(),
     source_bone_runtime_count: Runtime.sourceBoneById.size,
     rest_cache_count: Runtime.sourceBoneRestById.size,
     basis: {

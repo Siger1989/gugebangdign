@@ -585,7 +585,7 @@ button:disabled {
 
 .direction-confirm {
   display: grid;
-  grid-template-columns: 68px minmax(0, 1fr) 92px 74px;
+  grid-template-columns: 68px minmax(0, 1fr) 74px 74px;
   gap: 6px;
   align-items: center;
   padding: 7px;
@@ -607,6 +607,21 @@ button:disabled {
   min-height: 24px;
   padding: 0 6px;
   font-size: 10px;
+}
+
+.direction-angle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  gap: 6px;
+  align-items: center;
+}
+
+.direction-angle input {
+  min-width: 0;
+}
+
+.direction-angle strong {
+  text-align: right;
 }
 
 .mapping-workspace {
@@ -651,6 +666,11 @@ button:disabled {
 .mapping-chip.is-mapped {
   border-color: rgba(85, 227, 141, 0.62);
   background: rgba(85, 227, 141, 0.1);
+}
+
+.mapping-chip.is-fallback {
+  border-color: rgba(255, 200, 74, 0.72);
+  background: rgba(255, 200, 74, 0.1);
 }
 
 .source-bone-row {

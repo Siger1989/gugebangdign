@@ -1,5 +1,79 @@
 # CURRENT_STATE
 
+## IK Optional Toe Fallback - 2026-05-09
+
+Current objective:
+- Fix the IK stage failure on the imported `stylized_3d_character_model.glb` where auto mapping reports `17 / 19` and blocks `create_ik_controls`.
+
+Current progress:
+- Changed Humanoid_v1 animation readiness from strict `19 / 19` mapping to complete required core mapping.
+- Marked `R_Toe` and `L_Toe` as optional imported mappings.
+- Missing toe joints now get generated fallback positions from the corresponding foot, lower leg, and current character-forward basis.
+- Mapping UI now shows `脚尖自动补` for the optional fallback case instead of making it look like a hard error.
+- `set_character_direction` rebuilds Humanoid rest data so fallback toe positions stay aligned with the current front direction.
+- Added validation coverage for the bundled imported GLB path, not only the default dummy model.
+
+Files changed:
+- `app.js`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Validation result: PASS
+
+Validation details:
+- `npm run check`: PASS.
+- `node --check scripts\validate_demo_import.mjs`: PASS.
+- `npm run validate:import`: PASS.
+- Imported `sample_models/stylized_3d_character_model.glb` validates with no missing required humanoid mapping, Humanoid_v1 creation, 9 core IK controls, 19 joint controls, and 8 Walk_8F keyframes.
+- Latest screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_050311Z.png`
+
+Next step:
+- Hard refresh `http://localhost:8780/`.
+- Re-import the GLB, create/default-map Humanoid, confirm front direction, then create IK. `17 / 19（脚尖自动补）` is acceptable for this model.
+
+## Character Forward Angle Adjustment - 2026-05-09
+
+Current objective:
+- Fix the character-forward adjustment shown in the skeleton panel: `前后反转` only flipped 180 degrees, so a sideways or angled inferred arrow could not be corrected.
+
+Current progress:
+- Added manual character-forward yaw controls in the skeleton panel:
+  - angle slider `-180°` to `180°`
+  - `左转15°`
+  - `右转15°`
+- Extended `MotionState.direction` with `yaw_degrees`.
+- Extended `set_character_direction` command args/result with `yaw_degrees`.
+- `getRigBasis()` now applies `forward_sign` and then rotates the forward vector around the rig up axis by `yaw_degrees`.
+- Direction UI now shows current front/back state, angle, and confirmation state.
+- Exported Motion JSON now preserves `direction.yaw_degrees`.
+
+Files changed:
+- `index.html`
+- `styles.css`
+- `app.js`
+- `CURRENT_STATE.md`
+
+Validation result: PASS
+
+Validation details:
+- `node --check app.js`: PASS.
+- `node --check scripts\validate_demo_import.mjs`: PASS.
+- Targeted Playwright check with `sample_models/stylized_3d_character_model.glb`:
+  - set `yaw_degrees: 90`
+  - rotated basis forward became orthogonal to previous forward
+  - rotated basis forward aligned with previous right (`dot = 1`)
+  - exported Motion JSON includes `{ forward_sign: 1, yaw_degrees: 90, confirmed: true }`
+- `npm run validate:import`: PASS.
+- Latest screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260509_043943Z.png`
+
+Next step:
+- Hard refresh `http://localhost:8780/`.
+- In the skeleton panel, use the angle slider or `左转15°` / `右转15°` until the yellow arrow points along the character's real front, then click `确认当前前方`.
+- If it points exactly backward after angle correction, use `前后反转`.
+
 ## Handoff Refresh And GitHub Publish - 2026-05-09
 
 Current objective:
