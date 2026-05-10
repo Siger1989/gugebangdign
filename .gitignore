@@ -1,5 +1,7 @@
 node_modules/
 artifacts/
+backups/
+.tmp/
 dist/
 release/
 release-dir/

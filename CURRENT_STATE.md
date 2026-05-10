@@ -1,5 +1,1694 @@
 # CURRENT_STATE
 
+## Handoff And Git Upload Prep - 2026-05-11
+
+Current objective:
+- Write a clean handoff document for the current version.
+- Re-run upload-time validation before committing and pushing to git.
+- Keep the existing verified feature set intact.
+
+Current progress:
+- Replaced the old `HANDOFF.md` content with a clean Chinese handoff document.
+- The handoff now covers current project positioning, run/validation commands, stable capabilities, recent major changes, key files, debug APIs, known limits, next-step recommendations, and recovery steps.
+- Confirmed the working tree is on `main` with modified source, validation, style, package, handoff, and state files.
+- Upload-time validation passed.
+- Synced the updated source, validation script, style, package metadata, handoff, and state files into `backups/snapshot_20260511_010246_assignment_final`.
+
+Files changed:
+- `HANDOFF.md`
+- `CURRENT_STATE.md`
+- Existing pending implementation files remain part of this upload:
+  - `.gitignore`
+  - `app.js`
+  - `index.html`
+  - `package.json`
+  - `scripts/validate_demo_import.mjs`
+  - `styles.css`
+
+Commands run:
+- `git status --short --branch`
+- `git diff --stat`
+- `Get-ChildItem -Name README.md,ARCH.md,TASK.md,RULES.md,CURRENT_STATE.md,LOG.md,HANDOFF.md -ErrorAction SilentlyContinue`
+- `Get-Content README.md -TotalCount 220`
+- `Get-Content CURRENT_STATE.md -Tail 260`
+- `Get-Content HANDOFF.md -TotalCount 120`
+- `Get-Date -Format "yyyy-MM-dd HH:mm:ss zzz"`
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import` with `TEMP`, `TMP`, and `npm_config_cache` redirected to `D:\codex骨骼绑定\.tmp`
+- `Copy-Item` sync of tracked changed files into `backups/snapshot_20260511_010246_assignment_final`
+
+Validation result: PASS
+
+Validation details:
+- `node --check app.js`: PASS.
+- `node --check scripts\validate_demo_import.mjs`: PASS.
+- `npm run check`: PASS.
+- `npm run validate:import`: PASS.
+- Playwright result reported no failures and no browser console messages.
+- Screenshot: `artifacts/screenshots/pipeline_acceptance_20260510_233101Z.png`
+
+Current blocking issue:
+- None for this pass.
+
+Next step:
+- Stage, commit, and push `main` to `origin`.
+
+## Timeline Pinned Visual Cue - 2026-05-11
+
+Current objective:
+- Give users a clear visual cue when the timeline window is pinned.
+- Keep the cue isolated to timeline UI/readout state without changing motion data or timeline commands.
+
+Current progress:
+- Added a compact `固定` badge beside the timeline visible-window range.
+- The badge appears when `Runtime.timelineViewPinned` is true and hides when the timeline window is reset.
+- The badge title explains that reset restores automatic current-frame following.
+- `getTimelineViewState()` now reports `pinned_badge_visible` and `pinned_badge_text`.
+- Validation now confirms:
+  - reset keeps the pinned badge hidden.
+  - zoom/pan makes the badge visible and reports text `固定`.
+  - reset after a pinned jump hides the badge again.
+
+Files changed:
+- `index.html`
+- `app.js`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short`
+- `git diff --stat`
+- `Get-Content -LiteralPath CURRENT_STATE.md -TotalCount 210`
+- `rg`/diff inspections for timeline pinned badge code
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import` with `TEMP`, `TMP`, and `npm_config_cache` redirected to `D:\codex骨骼绑定\.tmp`
+
+Validation result: PASS
+
+Validation details:
+- Syntax checks passed.
+- Full Playwright import pipeline passed.
+- New pinned visual cue checks passed.
+- Existing pinned timeline window/current-frame-jump checks, keyboard-accessible timeline buttons, timeline readout/reset, timeline debug-state wheel checks, transform numeric debug/close, exact G/R/S numeric transform, assignment skeleton, binding preset, timeline navigation, frame/FPS inputs, and export validation checks remained passing.
+- Screenshot: `artifacts/screenshots/pipeline_acceptance_20260510_231338Z.png`
+
+Current blocking issue:
+- None for this pass.
+
+Next step:
+- Continue the self-review loop. A useful next target is adding a small timeline window keyboard shortcut layer for direct zoom/pan commands while avoiding conflicts with existing transform shortcuts.
+
+## Timeline Pinned Window Across Frame Jumps - 2026-05-11
+
+Current objective:
+- Preserve a user-adjusted timeline visible window across current-frame jumps when the user has manually panned/zoomed the window.
+- Keep the behavior isolated to timeline view state; do not change keyframes, playback, IK, or motion data.
+
+Current progress:
+- Added `Runtime.timelineViewPinned`.
+- Wheel zoom/pan and timeline zoom/pan buttons now pin the timeline window.
+- `ensureTimelineFrameVisible()` now respects the pinned window unless called with `force`.
+- `reset_timeline_view` clears the pinned state and force-restores a 24-frame window around the current frame.
+- Timeline zoom still keeps the current frame visible when the current frame was visible before zooming, preserving the previous zoom expectation.
+- `getTimelineViewState()` reports `pinned`.
+- Validation now confirms:
+  - reset leaves the window unpinned.
+  - button/wheel zoom and pan pin the window.
+  - after a pinned window is created, jumping current frame to frame 1 does not change the visible window.
+  - reset clears pinning and makes the current frame visible again.
+
+Files changed:
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short`
+- `git diff --stat`
+- `Get-Content -LiteralPath CURRENT_STATE.md -TotalCount 190`
+- `Get-Content -LiteralPath README.md -TotalCount 80`
+- `rg`/diff inspections for timeline pin/follow code
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import` with `TEMP`, `TMP`, and `npm_config_cache` redirected to `D:\codex骨骼绑定\.tmp`
+
+Validation result: PASS
+
+Validation details:
+- Syntax checks passed.
+- First full validation showed wheel zoom could push current frame 80 out of view; zoom now clamps to keep the current frame visible when it was visible before zooming.
+- Final full Playwright import pipeline passed.
+- New pinned timeline window/current-frame-jump checks passed.
+- Existing keyboard-accessible timeline buttons, timeline readout/reset, timeline debug-state wheel checks, transform numeric debug/close, exact G/R/S numeric transform, assignment skeleton, binding preset, timeline navigation, frame/FPS inputs, and export validation checks remained passing.
+- Screenshot: `artifacts/screenshots/pipeline_acceptance_20260510_224440Z.png`
+
+Current blocking issue:
+- None for this pass.
+
+Next step:
+- Continue the self-review loop. A useful next target is giving users an explicit visual cue when the timeline window is pinned, so they understand why current-frame jumps no longer auto-follow.
+
+## Timeline Window Buttons And Keyboard Access - 2026-05-11
+
+Current objective:
+- Make timeline zoom/pan accessible without requiring mouse wheel gestures.
+- Keep the change isolated to the timeline visible window; do not change keyframes or motion data.
+
+Current progress:
+- Added compact timeline window controls beside the range readout:
+  - pan left
+  - zoom out
+  - zoom in
+  - pan right
+- Added `zoom_timeline_view` and `pan_timeline_view` commands.
+- Timeline zoom buttons preserve the current frame as the zoom anchor when it is visible.
+- Timeline pan buttons move the visible window in frame-sized steps derived from the current window width.
+- The existing wheel handler now reuses the same zoom/pan helpers as the buttons.
+- `getTimelineViewState()` now reports button availability for pan/zoom controls.
+- Validation activates zoom/pan buttons via keyboard focus and Enter/Space, confirming:
+  - zoom in reduces visible frame count.
+  - pan right moves the visible start frame.
+  - zoom out expands the visible frame count.
+  - range text remains synchronized with the debug state.
+
+Files changed:
+- `index.html`
+- `app.js`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short`
+- `git diff --stat`
+- `Get-Content -LiteralPath CURRENT_STATE.md -TotalCount 180`
+- `Get-Content -LiteralPath README.md -TotalCount 80`
+- File/diff inspections for timeline window buttons, commands, and validation
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import` with `TEMP`, `TMP`, and `npm_config_cache` redirected to `D:\codex骨骼绑定\.tmp`
+
+Validation result: PASS
+
+Validation details:
+- Syntax checks passed.
+- Full Playwright import pipeline passed.
+- New keyboard-accessible timeline zoom/pan button checks passed.
+- Existing timeline readout/reset, timeline debug-state wheel checks, transform numeric debug/close, exact G/R/S numeric transform, assignment skeleton, binding preset, timeline navigation, frame/FPS inputs, and export validation checks remained passing.
+- Screenshot: `artifacts/screenshots/pipeline_acceptance_20260510_221605Z.png`
+
+Current blocking issue:
+- None for this pass.
+
+Next step:
+- Continue the self-review loop. A useful next target is making timeline visible-window changes non-destructive across current-frame jumps by preserving a user-pinned window when appropriate.
+
+## Timeline Range Readout And Reset - 2026-05-11
+
+Current objective:
+- Add a user-facing timeline visible-window readout and reset control.
+- Let users recover from wheel zoom/pan without relying on more wheel gestures.
+
+Current progress:
+- Timeline header now shows the current visible window as `start-end`.
+- Added a compact `Reset View` timeline metric button (`timelineResetViewButton`).
+- Added `reset_timeline_view`, which restores a 24-frame timeline window while keeping the current frame visible.
+- `getTimelineViewState()` now also reports the displayed range text and whether the reset button is available.
+- Validation now clicks the reset button after wheel zoom/pan and confirms:
+  - the command succeeds.
+  - the visible window returns to 24 frames.
+  - current frame remains visible.
+  - slider min/max match the visible range.
+  - displayed range text matches the debug window state.
+
+Files changed:
+- `index.html`
+- `app.js`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short`
+- `git diff --stat`
+- `Get-Content -LiteralPath CURRENT_STATE.md -TotalCount 170`
+- `rg`/file inspections for timeline range/readout/reset code
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import` with `TEMP`, `TMP`, and `npm_config_cache` redirected to `D:\codex骨骼绑定\.tmp`
+
+Validation result: PASS
+
+Validation details:
+- Syntax checks passed.
+- Full Playwright import pipeline passed.
+- New user-facing timeline window readout/reset checks passed.
+- Existing timeline debug-state wheel checks, transform numeric debug/close, exact G/R/S numeric transform, assignment skeleton, binding preset, timeline navigation, frame/FPS inputs, and export validation checks remained passing.
+- Screenshot: `artifacts/screenshots/pipeline_acceptance_20260510_214601Z.png`
+
+Current blocking issue:
+- None for this pass.
+
+Next step:
+- Continue the self-review loop. A useful next target is making timeline zoom/pan keyboard-accessible, so users without mouse wheel can still adjust the timeline window.
+
+## Timeline View Debug State Hook - 2026-05-11
+
+Current objective:
+- Add a stable debug/readout API for the timeline visible frame window.
+- Validate wheel zoom and Shift+wheel pan behavior without relying only on rendered tick DOM counts.
+
+Current progress:
+- Added `getTimelineViewState()` to the in-browser debug API.
+- The timeline debug state reports:
+  - visible `start`, `end`, and `frames`
+  - current frame and whether it is visible
+  - total frames
+  - slider min/max/value
+  - rendered tick count and first/last/current tick
+  - selected frames and keyframes currently in view
+  - zoom-in/zoom-out availability
+- Validation now simulates timeline wheel zoom and Shift+wheel pan, then confirms:
+  - current frame remains visible
+  - zoom reduces visible frame count
+  - pan moves the visible start frame
+  - slider min/max match the debug view window
+- Validation restores the timeline window after the wheel test so later keyframe DOM checks remain independent.
+
+Files changed:
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short`
+- `git diff --stat`
+- `Get-Content -LiteralPath CURRENT_STATE.md -TotalCount 160`
+- `rg`/file inspections for timeline view code and validation coverage
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import` with `TEMP`, `TMP`, and `npm_config_cache` redirected to `D:\codex骨骼绑定\.tmp`
+
+Validation result: PASS
+
+Validation details:
+- Syntax checks passed.
+- First full validation exposed that the new wheel test left the timeline at a 19-frame window, so a later DOM check only saw 7 visible key poses. The validation now restores the window before continuing.
+- Final full Playwright import pipeline passed.
+- New timeline view debug-state and wheel zoom/pan checks passed.
+- Existing transform numeric debug/close, exact G/R/S numeric transform, assignment skeleton, binding preset, timeline navigation, frame/FPS inputs, and export validation checks remained passing.
+- Screenshot: `artifacts/screenshots/pipeline_acceptance_20260510_211404Z.png`
+
+Current blocking issue:
+- None for this pass.
+
+Next step:
+- Continue the self-review loop. A useful next target is adding a small user-facing timeline range readout or reset-window control so users can recover from zoom/pan without relying on wheel gestures.
+
+## Transform Numeric Debug State Hook - 2026-05-11
+
+Current objective:
+- Add a stable debug/readout API for the floating transform numeric box.
+- Reduce future validation dependence on DOM class names while keeping the user-facing transform workflow unchanged.
+
+Current progress:
+- Added `getTransformValueBoxState()` to the in-browser debug API.
+- The debug state reports:
+  - `visible`
+  - `mode`
+  - `label`
+  - `input_value`
+  - `numeric_value`
+  - `control_ids`
+  - active transform mode/axis
+  - focus and screen position
+- Validation now confirms the floating value box reports a visible `G X` value of `0.025` after precise translate input.
+- Validation also confirms the debug state reports hidden after using the close button.
+
+Files changed:
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short`
+- `git diff --stat`
+- `Get-Content -LiteralPath CURRENT_STATE.md -TotalCount 140`
+- `Get-Content -LiteralPath README.md -TotalCount 70`
+- File inspections around transform numeric box/debug API/validation code
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import` with `TEMP`, `TMP`, and `npm_config_cache` redirected to `D:\codex骨骼绑定\.tmp`
+
+Validation result: PASS
+
+Validation details:
+- Syntax checks passed.
+- Full Playwright import pipeline passed.
+- New transform numeric debug-state checks passed.
+- Existing close-button, exact G/R/S numeric transform, assignment skeleton, binding preset, timeline navigation, frame/FPS inputs, and export validation checks remained passing.
+- Screenshot: `artifacts/screenshots/pipeline_acceptance_20260510_204323Z.png`
+
+Current blocking issue:
+- None for this pass.
+
+Next step:
+- Continue the self-review loop. A useful next target is improving timeline viewport ergonomics by adding explicit visible-range readout/debug coverage for wheel zoom/pan behavior.
+
+## Dismissible Transform Numeric Box - 2026-05-11
+
+Current objective:
+- Make the persistent floating transform numeric box easy to dismiss after precise edit/copy workflows.
+- Prevent clicks on the numeric box from leaking through into viewport selection or gizmo drag handling.
+
+Current progress:
+- Added a small close button to the floating transform numeric box.
+- Pointer/click events inside the numeric box now stop propagation before reaching the viewport.
+- Escape in the numeric input or close button dismisses the box; if a keyboard transform is still active, it cancels that transform cleanly.
+- Closing the value box returns focus to the canvas so viewport shortcuts remain available.
+- Validation now closes the box after a precise `G X` edit and confirms the selected controller stays unchanged.
+
+Files changed:
+- `app.js`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short`
+- `git diff --stat`
+- `Get-Content -LiteralPath CURRENT_STATE.md -TotalCount 120`
+- `Get-Content -LiteralPath README.md -TotalCount 80`
+- `rg`/file inspections for transform numeric box code and validation coverage
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import` with `TEMP`, `TMP`, and `npm_config_cache` redirected to `D:\codex骨骼绑定\.tmp`
+
+Validation result: PASS
+
+Validation details:
+- Syntax checks passed.
+- Full Playwright import pipeline passed.
+- New close-button check passed: the numeric box hides without changing the selected controller.
+- Existing exact G/R/S numeric transform, assignment skeleton, binding preset, timeline navigation, frame/FPS inputs, and export validation checks remained passing.
+- Screenshot: `artifacts/screenshots/pipeline_acceptance_20260510_201304Z.png`
+
+Current blocking issue:
+- None for this pass.
+
+Next step:
+- Continue the self-review loop. A practical next target is adding a small transform numeric state readout/debug hook so tests and future features can inspect the floating value box without relying only on DOM class checks.
+
+## Exact Rotate And Scale Numeric Transform - 2026-05-11
+
+Current objective:
+- Extend the persistent transform numeric box so precision input works for `R` rotate and `S` scale, not only constrained `G` translate.
+- Keep this isolated to transform input/command generation without changing IK solve rules or skeleton recognition.
+
+Current progress:
+- `R` now stores the active view/world axis in the numeric payload and accepts an exact degree value from the floating input.
+- `S` now accepts an exact scale factor from the floating input, clamped to a practical `0.05-20` range.
+- Active numeric commits update the live preview and final `set_control_transforms` command for rotate/scale.
+- After a completed translate/rotate/scale command, the numeric box persists when it belongs to that transform mode, so the user can still edit/copy the value.
+- Finished numeric rotate/scale edits now apply delta/ratio changes from the current transform, matching the existing translate-after-commit behavior.
+- Validation now checks:
+  - `R` exact value commit changes `COG_CTRL` rotation and keeps the numeric input visible.
+  - `S` exact value commit scales `Global_CTRL` by `1.25` and keeps the numeric input visible.
+  - The validation test undoes its own rotate/scale edits so later workflow checks remain independent.
+
+Files changed:
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short`
+- `git diff --stat`
+- `Get-Content -LiteralPath CURRENT_STATE.md -TotalCount 180`
+- `Get-Content -LiteralPath README.md -TotalCount 120`
+- `rg` inspections for transform numeric/gizmo/validation code
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import` with `TEMP`, `TMP`, and `npm_config_cache` redirected to `D:\codex骨骼绑定\.tmp`
+
+Validation result: PASS
+
+Validation details:
+- Syntax checks passed.
+- First full validation exposed test contamination from the new Global scale check; the test now undoes its own scale/rotate edits.
+- Final full Playwright import pipeline passed.
+- Existing assignment skeleton, binding preset, timeline navigation, keyframe delete, numeric frame/FPS inputs, and export validation checks remained passing.
+- New exact rotate/scale numeric transform checks passed.
+- Screenshot: `artifacts/screenshots/pipeline_acceptance_20260510_195007Z.png`
+
+Current blocking issue:
+- None for this pass.
+
+Next step:
+- Continue the self-review loop with another independent workflow gap. A good next target is making the floating transform value box easier to dismiss/reposition without interfering with viewport selection.
+
+## Editable Timeline Playback FPS - 2026-05-11
+
+Current objective:
+- Make the timeline playback FPS a direct editable workflow control instead of a static display value.
+- Keep the change independent from IK solving, controller transforms, and binding assignment state.
+
+Current progress:
+- Added a numeric FPS input in the timeline metrics area.
+- Added `set_playback_fps`, clamped to 1-120 FPS.
+- Changing FPS while playback is active restarts playback timing from the current frame so animation does not jump through stale timing state.
+- `getMotionStateSummary()` and Motion JSON export now expose the current `playback_fps`.
+- Validation now edits FPS to 12 through the UI and confirms exported JSON contains `playback_fps: 12`.
+
+Files changed:
+- `index.html`
+- `app.js`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short`
+- `git diff --stat`
+- `Get-Content -LiteralPath CURRENT_STATE.md -TotalCount 140`
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import` with `TEMP`, `TMP`, and `npm_config_cache` redirected to `D:\codex骨骼绑定\.tmp`
+
+Validation result: PASS
+
+Validation details:
+- Syntax checks passed.
+- Full Playwright import pipeline passed.
+- Existing assignment skeleton, binding preset, timeline navigation, keyframe delete, numeric frame input, and export validation checks remained passing.
+- New editable playback FPS check passed.
+- Screenshot: `artifacts/screenshots/pipeline_acceptance_20260510_192026Z.png`
+
+Current blocking issue:
+- None for this pass.
+
+Next step:
+- Continue the self-review loop with another independent professional workflow gap. Likely next target: exact rotate/scale numeric commit behavior, because the current precise numeric workflow is strongest for translation.
+
+## Editable Assignment Skeleton For Unrecognized Rigs - 2026-05-10
+
+Current objective:
+- If a model cannot be fully recognized/mapped, generate an editable Humanoid_v1 assignment skeleton before IK generation.
+- Allow the user to drag key joints onto the imported model/skeleton and use that adjusted skeleton as the IK generation source.
+
+Current progress:
+- `create_humanoid_skeleton` now uses a shared Humanoid binding path that works with full, partial, and missing mappings.
+- Missing Humanoid joints on imported GLB models are estimated from the model bounds instead of falling back to the small default test T-pose.
+- Partial or unrecognized imported models mark the skeleton as `editable_assignment_skeleton` and automatically enable visible joint debug handles.
+- `ensureHumanoidSkeletonForAnimation()` no longer hard-fails only because required mappings are missing; it can create the editable assignment skeleton first.
+- For editable assignment skeletons, `set_joint_position` now allows free keypoint placement instead of preserving parent bone length. Normal IK/control transforms still keep their existing constraints.
+- Dropping an editable assignment keypoint onto a nearby imported source bone now records the Humanoid-to-source-bone mapping and clears duplicate source assignments.
+- Editable assignment keypoint/rotate/scale edits persist back into `skeleton.rest_joints`, so later IK or Walk_8F generation uses the manually fitted rest skeleton.
+- Header/debug status now labels this mode as `赋值骨架 v1` with the missing required joint count, instead of looking like a normal completed Humanoid skeleton.
+- `.gitignore` now ignores `backups/` and `.tmp/`, keeping validation caches and source snapshots out of git status.
+- `export_motion_json` now auto-runs motion validation when keyframes exist and the report is stale/not passed, then stores `export_meta.validation_status` in the JSON.
+- Added independent binding preset workflow:
+  - `export_binding_preset` writes `humanoid_binding_preset_v1` JSON containing direction, Humanoid mapping, source bone names, fitted joints, bones, and rest skeleton.
+  - `import_binding_preset` restores that fitted skeleton and remaps source bones by ID or name when possible.
+  - Export panel now has `导出绑定预设` and `导入绑定预设` buttons using the existing JSON textarea.
+- Added timeline key navigation:
+  - `go_to_previous_keyframe` and `go_to_next_keyframe` commands.
+  - Timeline panel now has `上一关键帧` and `下一关键帧` buttons.
+- Added `delete_current_keyframe` and a `删除当前帧` timeline button.
+- Added timeline keyboard shortcuts:
+  - `[` / `PageUp`: previous keyframe.
+  - `]` / `PageDown`: next keyframe.
+  - `Delete` / `Backspace`: delete current keyframe.
+- Timeline transport layout now wraps buttons instead of using the old fixed 8-button grid, preventing horizontal overflow after adding keyframe tools.
+- Timeline keyframe tools now disable themselves when the action is unavailable:
+  - previous/next keyframe disabled when there are no keyframes.
+  - delete current frame disabled when the current frame is not keyed.
+  - paste remains disabled until a frame is copied.
+- Added direct numeric frame entry beside the timeline slider:
+  - typing a frame number runs `set_current_frame`.
+  - frames beyond the current range extend the timeline just like other frame navigation.
+  - the input blurs after commit so stale values do not re-submit when clicking timeline buttons.
+- Added validation that simulates an incomplete Humanoid mapping, generates the assignment skeleton, moves `R_Hand` to an exact manual target, then creates IK controls from it.
+- Extended validation to snap `L_Hand` onto a live source bone, confirm the mapping is recorded, and confirm the rest pose is updated.
+- Extended validation to confirm the assignment skeleton status is visible in the header/debug summary.
+- Extended validation to export immediately after generating Walk_8F and confirm export auto-validation writes a passed report.
+- Extended validation to export a fitted assignment skeleton as a binding preset, clear the current skeleton/mapping, import the preset, and confirm mapping/rest pose are restored before creating IK.
+- Extended validation to jump from frame 11 to previous Walk keyframe 10, then next keyframe 13.
+- Extended validation to delete the current keyframe, confirm keyframe count drops to 7, then regenerate Walk_8F to keep later tests independent.
+- Extended validation to trigger previous/next/delete keyframe through keyboard shortcuts and then regenerate Walk_8F.
+- Extended validation to check the timeline transport does not overflow horizontally.
+- Extended validation to confirm timeline tool disabled states before keyframes exist and after Walk_8F keyframes are generated.
+- Extended validation to type frame 37 into the numeric frame input and confirm the timeline jumps exactly to that frame.
+
+Files changed:
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `.gitignore`
+- `index.html`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import` with `TEMP`, `TMP`, and `npm_config_cache` redirected to `D:\codex骨骼绑定\.tmp`
+
+Validation result: PASS
+
+Validation details:
+- Full import pipeline passed.
+- New incomplete-mapping assignment skeleton checks passed.
+- Screenshot: `artifacts/screenshots/pipeline_acceptance_20260510_184413Z.png`
+
+Current blocking issue:
+- None for the editable assignment skeleton pass.
+
+Next step:
+- Back up the current source state, then start a self-review loop focused on independent professional workflow gaps.
+
+Backup:
+- Created source snapshot at `backups/snapshot_20260511_005340`.
+- Manifest: `backups/snapshot_20260511_005340/BACKUP_MANIFEST.txt`.
+- Created final post-assignment snapshot at `backups/snapshot_20260511_010246_assignment_final`.
+- Manifest: `backups/snapshot_20260511_010246_assignment_final/BACKUP_MANIFEST.txt`.
+
+## ZBrush Gizmo, Multi-Select, Timeline, And Numeric Transform - 2026-05-10
+
+Current objective:
+- Continue the queued controller interaction fixes in order:
+  - multi-select / exclude / group transform for controllers.
+  - timeline view that can expand past 24 frames and zoom with the wheel.
+  - persistent editable numeric value box for precise G-axis transforms.
+  - R rotation around the current view axis.
+  - replace the previous mode-specific gizmo rings with a ZBrush Gizmo 3D style transform controller.
+
+Current progress:
+- Added controller selection sets:
+  - normal click selects one control.
+  - Shift adds to the current selection.
+  - Ctrl/Cmd toggles a control.
+  - Alt removes/excludes a control.
+- Added `set_control_transforms` for batch controller transforms.
+- Dragging or keyboard-transforming a selected group now moves the group together.
+- Separated IK target handle position from solved end-effector position, so an unreachable hand/foot target no longer gets snapped back by the IK solve.
+- Replaced the previous transform-gizmo rendering path with a ZBrush-like always-visible gizmo:
+  - center move handle.
+  - X/Y/Z move arrows.
+  - X/Y/Z scale cubes.
+  - view-plane rotate ring and handle.
+- R now defaults to the camera/view axis instead of a world/local axis.
+- Added persistent transform numeric input near the viewport control for G-axis precision input and copy/edit workflows.
+- Timeline view now tracks a visible frame window, can extend beyond 24 frames, and supports wheel zoom/pan behavior.
+- Validation coverage now includes multi-select, remove/exclude, group move, numeric transform commit, timeline expansion to frame 80, and the new batch transform command.
+
+Files changed:
+- `app.js`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- Small Playwright reproduction for grouped hand target preservation.
+- `npm run validate:import` with `TEMP`, `TMP`, and `npm_config_cache` redirected to `D:\codex骨骼绑定\.tmp`
+
+Validation result: PASS
+
+Validation details:
+- Full import pipeline validation passed.
+- New multi-select/group-transform/timeline/numeric-transform checks passed.
+- Screenshot: `artifacts/screenshots/pipeline_acceptance_20260510_160213Z.png`
+- Temporary D-drive npm/cache folder was removed after validation.
+
+Current blocking issue:
+- None for this pass.
+
+Next step:
+- Continue manual bug triage from the current browser/EXE view. The next likely areas are fine-tuning the visible ZBrush gizmo proportions and deciding whether numeric edit should also commit exact rotate/scale values, not only translate.
+
+## Mapping Button Colors And Natural Elbow Guide - 2026-05-10
+
+Current objective:
+- Make mapping buttons green by default and yellow after binding confirmation.
+- Soften the previous elbow-backward fix because it made elbows feel locked in place.
+
+Current progress:
+- Added `hasConfirmedHumanoidBinding()` to distinguish mapped-but-unconfirmed state from confirmed Humanoid_v1 binding.
+- Mapping chips and source bone rows now use green as the default/mapped state.
+- After `绑定骨骼赋值` creates a confirmed Humanoid_v1 skeleton, mapped/fallback chips and assigned source rows gain `is-confirmed` and turn yellow.
+- Reworked `getWalkArmGuidePose()` again:
+  - hand target follows walk swing dynamically.
+  - elbow is computed from two-bone geometry and bend guide instead of being placed at a fixed backward offset.
+  - bend guide prevents obvious forward folding but allows natural arm swing.
+  - pole position follows the solved elbow/bend direction instead of pinning a static world position.
+- Updated validation wording from "must bend backward" to "avoid forward elbow fold".
+- Added validation that mapping chips are green before binding and yellow after binding.
+
+Files changed:
+- `app.js`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import` with `TEMP`, `TMP`, and `npm_config_cache` redirected to `D:\codex骨骼绑定\.tmp`
+
+Validation result: PASS
+
+Validation details:
+- Full import pipeline validation passed.
+- New mapping color checks passed.
+- Forward-elbow-fold checks passed.
+- Screenshot: `artifacts/screenshots/pipeline_acceptance_20260510_151653Z.png`
+- Temporary D-drive npm/cache folder was removed after validation.
+
+Current blocking issue:
+- None for this pass.
+
+Next step:
+- Manual side-view check of Walk_8F on imported human models; if the arm still looks too stylized, tune hand swing amplitude and bend guide weights rather than using a fixed elbow offset.
+
+## Walk Elbow Backward Bend Fix - 2026-05-10
+
+Current objective:
+- Fix Walk_8F arms bending elbows forward in side view; elbows should bias backward during the walk.
+- Clarify that the three IK choices are solve modes, not three separate visible controller rigs.
+
+Current progress:
+- Increased elbow pole backward offset in `setWalkElbowPoleControl()`.
+- Updated shared `getWalkArmGuidePose()` so elbow joints are biased behind the shoulder relative to character forward.
+- Kept hand swing motion, but separated it from elbow bend direction so the elbow does not follow the hand forward too much.
+- Moved generated elbow pole positions farther behind the elbow to keep IK bend direction stable.
+- Updated solve-mode descriptions:
+  - `IK/FK 混合`: default editor mode using same controls for IK ends and FK/torso rotations, with foot target preservation.
+  - `脚底锁定 IK`: currently emphasizes foot pinning and shares most solving with hybrid.
+  - `简易 IK`: lightweight two-bone IK, no body-move foot reverse constraint.
+- Added validation that Walk elbows bend backward for both test dummy and imported sample GLB.
+
+Files changed:
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import` with `TEMP`, `TMP`, and `npm_config_cache` redirected to `D:\codex骨骼绑定\.tmp`
+
+Validation result: PASS
+
+Validation details:
+- Full pipeline validation passed.
+- New backward-elbow validation passed for Walk_8F.
+- Screenshot: `artifacts/screenshots/pipeline_acceptance_20260510_150653Z.png`
+- Temporary D-drive npm/cache folder was removed after validation.
+
+Current blocking issue:
+- None for the elbow-forward bend fix.
+
+Next step:
+- Manual side-view check in the browser/EXE webview while continuing bug triage.
+
+## Walk Arm IK Mode Fix - 2026-05-10
+
+Current objective:
+- Fix Walk_8F arm pose mismatch where simple IK looked correct but hybrid and pinned modes produced wrong arm positions.
+
+Current progress:
+- Found that `basic` used `setWalkArmPose()` with a shoulder/elbow/hand guide pose, while `hybrid` and `pinned` used `setWalkHandIkControl()` with a separate fixed hand target.
+- Added shared `getWalkArmGuidePose()` logic so all Walk_8F solve modes use the same arm guide pose.
+- Updated hybrid/pinned Walk generation to write hand IK controls, elbow pole controls, forearm joints, and hand joints from that shared guide.
+- Changed the empty validation report status from `Issues` to `Not run`, so loading or editing before validation no longer shows a false `有问题` state.
+- Added Playwright validation coverage comparing `basic`, `hybrid`, and `pinned` Walk arm offsets.
+
+Files changed:
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import` with `TEMP`, `TMP`, and `npm_config_cache` redirected to `D:\codex骨骼绑定\.tmp`
+
+Validation result: PASS
+
+Validation details:
+- Syntax checks passed.
+- Full import pipeline validation passed.
+- Screenshot: `artifacts/screenshots/pipeline_acceptance_20260510_144829Z.png`
+- No browser console failures.
+
+Current blocking issue:
+- None for this specific Walk arm solve-mode mismatch.
+
+Next step:
+- Manual browser check of Walk_8F under `basic`, `hybrid`, and `pinned` if the user wants visual confirmation while continuing bug triage.
+
+## Select Option Contrast Fix - 2026-05-10
+
+Current objective:
+- Make native dropdown options readable; unselected options in the control logic dropdown were too pale on the white popup background.
+
+Current progress:
+- Added explicit `select option` colors:
+  - unselected options: dark text on white background.
+  - selected option: white text on blue background.
+- Did not build EXE or commit changes.
+
+Files changed:
+- `styles.css`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `npm run check`
+- `git diff -- styles.css`
+
+Validation result: PASS
+
+Validation details:
+- `npm run check`: PASS.
+
+Current blocking issue:
+- None for this CSS change.
+
+Next step:
+- Continue manual bug finding.
+
+## Pointer-Only Timeline And Parameter Sliders - 2026-05-10
+
+Current objective:
+- Prevent direct-drag sliders such as the timeline frame slider and viewport parameter sliders from staying selected or stealing transform hotkeys.
+
+Current progress:
+- Marked pointer-only range inputs with `tabindex="-1"` in `index.html`.
+- Added runtime `pointer-only-range` tagging for all direct-drag range inputs.
+- Range sliders now blur on focus, pointer down, pointer up, pointer cancel, and change.
+- Added CSS to remove focus outlines/box shadows from pointer-only range sliders in viewport controls, timeline controls, model panel fields, and direction controls.
+- Updated app cache query to `20260510-pointer-only-ranges`.
+- Extended validation so `R` rotation still commits when focus was on:
+  - model opacity slider
+  - timeline frame slider
+
+Files changed:
+- `app.js`
+- `index.html`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import` with `TEMP/TMP` and `npm_config_cache` pointed to `D:\codex骨骼绑定\.tmp`
+
+Validation result: PASS
+
+Validation details:
+- `npm run check`: PASS.
+- `npm run validate:import`: PASS.
+- Latest pipeline screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260510_142942Z.png`
+
+Current blocking issue:
+- C drive free space remains `0`; default npm/Playwright temp/cache paths still need a D-drive override until disk space is freed.
+
+Next step:
+- Hard refresh the browser/EXE webview if it still shows the old top-level `验证` button or old controller defaults.
+
+## Frame Tools, Focus, And Validation Stage Fix - 2026-05-10
+
+Current objective:
+- Fix action editing interruptions where focused viewport sliders swallow `R/G/S` shortcuts and playback/validation jumps out of the motion panel.
+- Add current-frame copy/paste and mirror tools.
+- Reduce default controller visual weight.
+
+Current progress:
+- Removed the top-level `验证` workflow step; validation is now a motion-panel action/report instead of a primary stage.
+- Changed `play` to keep `Runtime.stage = "motion"` instead of switching to `validate`.
+- Changed `validate_motion` to update the report without switching panels.
+- Added timeline buttons:
+  - `复制当前帧`
+  - `粘贴当前帧`
+  - `镜像当前帧`
+- Added keyboard shortcuts:
+  - `Ctrl+C` / `Cmd+C`: copy current frame.
+  - `Ctrl+V` / `Cmd+V`: paste copied frame to current frame.
+- Added Command API entries:
+  - `copy_current_frame`
+  - `paste_copied_frame`
+  - `mirror_current_frame`
+- Added mirrored-pose generation that swaps R/L joints and IK controls across the character center plane, writes a keyframe at the current frame, and applies the mirrored pose immediately.
+- Fixed focused range sliders so viewport parameter sliders blur after pointer use and no longer block global transform hotkeys.
+- `R` pressed while the model-opacity slider has focus now starts controller rotation instead of staying locked on the slider.
+- Reduced default controller visual size from `0.82` to `0.68`.
+- Reduced default controller line thickness from `0.28` to `0.20`.
+- Updated validation script coverage for:
+  - slider-focus `R` rotation on `Head_CTRL`
+  - current-frame copy/paste
+  - mirror current frame
+  - playback staying in motion stage
+  - validation staying in motion stage
+  - export through the top `导出` action
+
+Files changed:
+- `app.js`
+- `index.html`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short`
+- `git diff --stat`
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `node scripts\validate_demo_import.mjs` with `TEMP/TMP` pointed to `D:\codex骨骼绑定\.tmp`
+- `npm run validate:import` with `TEMP/TMP` and `npm_config_cache` pointed to `D:\codex骨骼绑定\.tmp`
+
+Validation result: PASS
+
+Validation details:
+- `npm run check`: PASS.
+- `node --check scripts\validate_demo_import.mjs`: PASS.
+- `npm run validate:import`: PASS with D-drive temp/cache override.
+- Latest pipeline screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260510_142345Z.png`
+
+Current blocking issue:
+- C drive free space is `0`, so default `npm` cache writes and default Playwright/Edge temp profile creation fail unless `TEMP`, `TMP`, and `npm_config_cache` are redirected to D drive.
+
+Next step:
+- Manual browser test the new timeline buttons and controller feel.
+- If building EXE next, use D-drive temp/cache environment variables or free C-drive space first.
+
+## Handoff Document Refresh - 2026-05-10
+
+Current objective:
+- Produce a clean handoff document for the current IK solve mode, Walk_8F, binding, EXE, and performance state.
+
+Current progress:
+- Rewrote `HANDOFF.md` as the current primary handoff document.
+- Removed stale early-session handoff details from the main handoff file.
+- Document now covers current workflow, EXE path, Command API, IK/control logic modes, Walk_8F state, GPU/WebGL performance notes, validation commands, known limitations, and suggested next steps.
+
+Files changed:
+- `HANDOFF.md`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short`
+- `git diff --stat`
+- `Get-Content -Raw -Encoding UTF8 README.md`
+- `Get-Content -Raw -Encoding UTF8 HANDOFF.md`
+- `Get-Content -Raw CURRENT_STATE.md`
+- `Get-Content -Raw -Encoding UTF8 package.json`
+- `rg` lookups for current UI/control logic symbols
+- `npm run check`
+- `Get-Content -Encoding UTF8 HANDOFF.md | Select-Object -First 40`
+
+Validation result: PASS
+
+Validation details:
+- `npm run check`: PASS.
+- `HANDOFF.md` exists and opens as UTF-8 Chinese text.
+
+Current blocking issue:
+- None.
+
+Next step:
+- Use `HANDOFF.md` as the primary handoff entry before continuing IK/Walk_8F fixes.
+
+## IK Solve Modes And GPU Render Path - 2026-05-10
+
+Current objective:
+- Move the new controller options from visual styles to actual control logic choices, keep the lightweight polygon controller look, and reduce viewport lag.
+
+Current progress:
+- Replaced the visible IK panel option with `控制逻辑`.
+- Added three solve modes:
+  - `hybrid`: IK/FK mixed animator mode, default.
+  - `pinned`: foot-pinned IK mode.
+  - `basic`: lighter two-bone IK mode.
+- Added `MotionState.control_rig_options.solve_mode`.
+- Added `set_control_solve_mode` command and extended `create_ik_controls` with `solve_mode`.
+- Walk_8F now uses IK hand targets in non-basic modes instead of directly forcing forearm/hand joint positions.
+- Pelvis/COG body movement only pins feet in `hybrid` and `pinned`; `basic` stays lighter.
+- Kept generated controls in the compact lightweight polygon visual style by default.
+- Changed WebGL renderer to request `powerPreference: "high-performance"`, disabled renderer antialiasing, capped pixel ratio at `1.35`, and added renderer info to debug state.
+- Fixed the biggest viewport lag source: imported GLB scenes are now reused instead of being cloned on every `renderAll()`.
+- Changed the render loop to render on demand when idle, while still rendering during playback, drag, and transform.
+- Fixed top `导入模型` workflow so Electron/EXE uses `desktopBridge.openGlbFile()` first and browser falls back to the hidden file input.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short`
+- `git diff --stat`
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `node --check electron-main.cjs`
+- `node --check electron-preload.cjs`
+- Targeted Playwright validation for solve mode UI and Command API.
+- `npm run validate:import`
+- `npx electron-builder --win --dir --config.directories.output=release-fixed21 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- Start-process smoke test for `release-fixed21\win-unpacked\动作生成工作台.exe`
+
+Validation result: PASS
+
+Validation details:
+- Solve mode screenshot:
+  - `artifacts/screenshots/solve_modes_gpu_2026-05-10T13-03-40-346Z.png`
+- Pipeline screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260510_130613Z.png`
+- Targeted checks:
+  - UI has `控制逻辑` select.
+  - UI no longer exposes controller visual preset select.
+  - `hybrid`, `pinned`, and `basic` all generate 14 main controls.
+  - `hybrid` applies Walk_8F and creates 8 keyframes.
+  - Debug summary reports `renderer: WebGL GPU` and pixel ratio.
+- `npm run validate:import`: PASS.
+- Desktop build:
+  - `release-fixed21\win-unpacked\动作生成工作台.exe`
+  - Launch smoke stayed alive for 6 seconds: PASS.
+
+Current blocking issue:
+- None for this change.
+
+Next step:
+- Manual test imported GLB in `release-fixed21` and compare the three solve modes on the same T-Pose model.
+
+## Control Visual Presets - 2026-05-10
+
+Current objective:
+- Add common IK controller visual styles as optional generation schemes, based on typical custom rig control shapes used in Blender/Rigify and MotionBuilder-style control rigs.
+
+Current progress:
+- Added controller visual presets:
+  - `compact`: current low-occlusion polygon controls.
+  - `rigify`: Blender/Rigify-like IK, pole, foot, torso, and hand custom shapes.
+  - `motionbuilder`: larger effector-style global/IK controls with lighter joint debug markers.
+- Added `MotionState.control_rig_options.visual_preset`.
+- Added `visual_preset` to generated controls so exported/imported motion JSON preserves the selected controller style.
+- Added `set_control_visual_preset` command.
+- Extended `create_ik_controls` to accept `visual_preset`.
+- Added the IK panel dropdown `控制器方案`.
+- Updated debug summary to show the active controller preset.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short`
+- `git diff --stat`
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- Targeted Playwright validation for `compact`, `rigify`, and `motionbuilder` controller presets.
+- `npm run validate:import`
+- `npx electron-builder --win --dir --config.directories.output=release-fixed20 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- Start-process smoke test for `release-fixed20\win-unpacked\动作生成工作台.exe`
+
+Validation result: PASS
+
+Validation details:
+- Targeted screenshot:
+  - `artifacts/screenshots/control_presets_2026-05-10T12-04-18-727Z.png`
+- Targeted checks:
+  - UI dropdown contains `compact`, `rigify`, and `motionbuilder`.
+  - Each preset can be set through Command API.
+  - `create_ik_controls` generates 14 main controls and 19 joint debug controls for each preset.
+  - Every generated control carries the selected `visual_preset`.
+- `npm run validate:import`: PASS.
+- Pipeline screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260510_120533Z.png`
+- Desktop build:
+  - `release-fixed20\win-unpacked\动作生成工作台.exe`
+  - Launch smoke stayed alive for 6 seconds: PASS.
+
+Current blocking issue:
+- None for this change.
+
+Next step:
+- Use `release-fixed20\win-unpacked\动作生成工作台.exe` for manual testing.
+
+## Control Multi-Select - 2026-05-10
+
+Current objective:
+- Add normal editor-style multi-selection for IK/controllers: plain click selects one, Ctrl+click adds/removes a controller, and empty viewport click clears all selections.
+
+Current progress:
+- Added `selected_controls` to `MotionState` while keeping `selected_control` as the active/primary controller for existing G/R/S tools and inspector fields.
+- Extended `select_control` with `additive` and `toggle` args.
+- Ctrl/Cmd viewport clicking now toggles controller membership without starting a drag.
+- Plain viewport clicking still replaces the selection with one active controller.
+- Empty viewport clicking still calls `clear_selection` and clears all selected controllers.
+- Multi-selected controllers render as selected; the primary controller remains the last clicked control.
+- Export/debug state now reports `selected_controls` and `selected_control_count`.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short`
+- `git diff --stat`
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- Targeted Playwright validation for controller Ctrl multi-select and empty viewport clear.
+- `npm run validate:import`
+- `npx electron-builder --win --dir --config.directories.output=release-fixed19 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- Start-process smoke test for `release-fixed19\win-unpacked\动作生成工作台.exe`
+
+Validation result: PASS
+
+Validation details:
+- Targeted screenshot:
+  - `artifacts/screenshots/control_multiselect_2026-05-10T11-06-52-798Z.png`
+- Targeted checks:
+  - Plain click on `R_Hand_IK` selects only `R_Hand_IK`.
+  - Ctrl+click on `L_Hand_IK` adds it and makes it primary.
+  - Ctrl+click on an already selected controller removes it.
+  - Ctrl+click on the final selected controller clears the controller selection.
+  - Empty viewport click logs `clear_selection` and clears all selected controllers.
+- `npm run validate:import`: PASS.
+- Pipeline screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260510_110802Z.png`
+- Desktop build:
+  - `release-fixed19\win-unpacked\动作生成工作台.exe`
+  - Launch smoke stayed alive for 6 seconds: PASS.
+
+Current blocking issue:
+- None for this change.
+
+Next step:
+- Use `release-fixed19\win-unpacked\动作生成工作台.exe` for manual testing.
+
+## Viewport Clear Selection - 2026-05-10
+
+Current objective:
+- Make viewport selection behave like a normal 3D tool: clicking empty space clears the current selection, and non-edit stages should not select bone points or controls.
+
+Current progress:
+- Added the `clear_selection` command.
+- Empty left-clicks in the 3D viewport now clear selected bone, source bone, selected control, selected timeline frames, hover state, and pending viewport drag state.
+- Humanoid joint and source skeleton picking is now limited to the skeleton/mapping stages.
+- IK/control picking is now limited to editable control stages (`motion`, `control_rig`, `ik`).
+- The transform gizmo no longer renders in non-edit stages such as `validate`.
+- Updated the `app.js` cache query in `index.html`.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `git status --short`
+- `git diff --stat`
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- Targeted Playwright validation for empty viewport click and validate-stage click behavior.
+- `npm run validate:import` (first attempt timed out at 120 seconds)
+- `npm run validate:import` (second attempt)
+- `npx electron-builder --win --dir --config.directories.output=release-fixed18 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- Start-process smoke test for `release-fixed18\win-unpacked\动作生成工作台.exe`
+
+Validation result: PASS
+
+Validation details:
+- Targeted screenshot:
+  - `artifacts/screenshots/clear_selection_2026-05-10T10-13-49-032Z.png`
+- Targeted checks:
+  - Selecting `R_Hand_IK`, then clicking empty viewport space clears selected control and selected bone.
+  - In `validate` stage, clicking a visible joint debug point/control area clears instead of selecting.
+  - In `motion` stage, joint control command selection still works.
+- `npm run validate:import`: PASS.
+- Pipeline screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260510_101424Z.png`
+- Desktop build:
+  - `release-fixed18\win-unpacked\动作生成工作台.exe`
+  - Launch smoke stayed alive for 6 seconds: PASS.
+
+Current blocking issue:
+- None for this change.
+
+Next step:
+- Use `release-fixed18\win-unpacked\动作生成工作台.exe` for manual testing.
+
+## Chest And Head G Translate Fix - 2026-05-10
+
+Current objective:
+- Fix `G` translation not working on chest and head controls.
+
+Current progress:
+- `Chest_CTRL` now handles position deltas in `applyControlToJoint()`.
+- `Head_CTRL` now handles position deltas in `applyControlToJoint()`.
+- Chest translation moves the chest branch through `moveJointBranch("Chest", ...)`, keeping the Spine-Chest segment at fixed rest length.
+- Head translation moves the head through `moveJointBranch("Head", ...)`, keeping the Neck-Head segment at fixed rest length.
+- Updated the `app.js` query version in `index.html` to avoid stale browser cache.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- Targeted Playwright validation for `Chest_CTRL` and `Head_CTRL` translation.
+- `npm run validate:import`
+- `npx electron-builder --win --dir --config.directories.output=release-fixed17 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- Start-process smoke test for `release-fixed17\win-unpacked\动作生成工作台.exe`
+
+Validation result: PASS
+
+Validation details:
+- Targeted screenshot:
+  - `artifacts/screenshots/chest_head_g_20260510T091225.png`
+- Targeted checks:
+  - `Chest_CTRL` translate moves Chest and Head.
+  - Spine-Chest length stays within `0.002m` of rest length.
+  - `Head_CTRL` translate moves Head.
+  - Neck-Head length stays within `0.002m` of rest length.
+  - Keyboard `G` on `Head_CTRL` commits `set_control_transform` successfully.
+- `npm run validate:import`: PASS.
+- Pipeline screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260510_091300Z.png`
+- Desktop build:
+  - `release-fixed17\win-unpacked\动作生成工作台.exe`
+  - Launch smoke stayed alive for 6 seconds: PASS.
+
+Current blocking issue:
+- None for this change.
+
+Next step:
+- Use `release-fixed17\win-unpacked\动作生成工作台.exe` for manual testing.
+- Continue control-rig behavior cleanup if torso/head translate still needs different artistic limits.
+
+## Axis Quick Switch And Fixed-Length IK - 2026-05-10
+
+Current objective:
+- Add visible XYZ axis quick switching, remove free-rotate dead spots and initial R-key angle jumps, and prevent waist/COG movement from stretching leg controllers.
+
+Current progress:
+- Added a compact `自由 / X / Y / Z / 视角` axis switch group beside the transform toolbar.
+- Axis buttons update `MotionState.transform.axis` and visually show the active axis.
+- Rotation transform now accumulates incremental mouse movement instead of recalculating from the initial pointer-to-center angle:
+  - Pressing `R` starts at zero delta, so the selected control no longer jumps immediately.
+  - Free/view rotation can continue past 180 degrees without hitting the previous dead angle.
+  - X/Y/Z constrained rotation uses incremental screen-axis movement.
+- `COG_CTRL` translation now uses anchored-foot pelvis solving instead of moving the whole skeleton like Global/Root.
+- Pelvis/COG anchored-foot movement now clamps the requested translation to the reachable leg length. If the feet cannot stay locked, the move stops at the physical limit.
+- Two-bone IK now uses fixed rest-pose upper/lower segment lengths only, so stretched previous poses cannot become the new bone length.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `styles.css`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run validate:import`
+- Targeted Playwright validation for axis buttons, COG foot lock, fixed leg lengths, and R-key no-jump behavior.
+- `npx electron-builder --win --dir --config.directories.output=release-fixed16 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- Start-process smoke test for `release-fixed16\win-unpacked\动作生成工作台.exe`
+
+Validation result: PASS
+
+Validation details:
+- `npm run validate:import`: PASS.
+- Pipeline screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260510_085616Z.png`
+- Targeted validation screenshot:
+  - `artifacts/screenshots/axis_locks_rotate_20260510T085855.png`
+- Targeted checks:
+  - Axis button `X` sets axis to `x`.
+  - Axis button `视角` sets axis to `view`.
+  - Axis button `自由` clears axis.
+  - `COG_CTRL` translation keeps both feet locked within `0.003m`.
+  - Leg segments stay within `0.002m` of rest-pose lengths.
+  - Pressing `R` and moving slightly keeps initial rotation delta under `0.12`, preventing the previous jump.
+- Desktop build:
+  - `release-fixed16\win-unpacked\动作生成工作台.exe`
+  - Launch smoke stayed alive for 6 seconds: PASS.
+
+Current blocking issue:
+- None for this change.
+
+Next step:
+- Rebuild the unpacked EXE if the user wants the desktop app refreshed with these changes.
+- Continue with the larger control-rig cleanup separately: simpler polygon controllers, clearer torso handle spacing, and full DCC-style transform handles.
+
+## Toolbar Axis Mode And Keyboard Undo - 2026-05-10
+
+Current objective:
+- Separate keyboard modal transforms from toolbar axis-tool transforms, reduce transform gizmo visual weight, and add keyboard undo/redo.
+
+Current progress:
+- Keyboard `G/R/S` remains the direct modal workflow:
+  - Press `G`, move the mouse, then confirm with Enter or left click.
+  - Press `G` then `X/Y/Z` to constrain movement to that axis.
+  - Press `R` then `X/Y/Z` to rotate around that axis.
+- Toolbar buttons now behave as tool selection only:
+  - Clicking `移动 G` / `旋转 R` / `缩放 S` shows the corresponding gizmo.
+  - Dragging the controller body while a toolbar tool is active only selects the control; it no longer directly moves it.
+  - To transform in toolbar mode, the user must drag the visible axis/handle/ring.
+- Translate and scale gizmo axes are now pickable transform-gizmo targets with invisible hit geometry.
+- Reduced visual thickness and size for transform arrows, arrowheads, scale boxes, labels, and rotation rings while preserving click targets.
+- Added keyboard undo/redo:
+  - `Ctrl+Z` / `Cmd+Z`: undo
+  - `Ctrl+Y` / `Cmd+Y`: redo
+  - `Ctrl+Shift+Z` / `Cmd+Shift+Z`: redo
+- Updated `index.html` app.js query version to avoid loading stale cached script.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- Targeted Playwright transform test:
+  - keyboard `G` moved selected control
+  - `Ctrl+Z` restored original control position
+  - toolbar `移动 G` body drag did not directly move the selected control
+- `npm run validate:import`
+- `npx electron-builder --win portable --config.directories.output=release-fixed15 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- Start-process smoke test for `release-fixed15\win-unpacked\动作生成工作台.exe`
+- Packaged `win-unpacked` import smoke through CDP.
+
+Validation result: PASS
+
+Validation details:
+- Targeted transform test:
+  - keyboardMoveDelta: `0.2256026020459955`
+  - undoDelta: `0`
+  - toolbarBodyDragDelta: `0`
+  - screenshot: `artifacts/screenshots/toolbar_axis_keyboard_undo_20260510.png`
+- `npm run validate:import`: PASS.
+- Latest pipeline screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260510_075051Z.png`
+- `release-fixed15\win-unpacked\动作生成工作台.exe` launch smoke:
+  - PASS. Process stayed alive after 8 seconds.
+- `release-fixed15\win-unpacked` import smoke:
+  - imported: Loaded
+  - source bones: 39
+  - GLB skins: 1
+
+Current blocking issue:
+- Single-file portable NSIS build for `release-fixed15\动作生成工作台 0.1.0.exe` failed during the final NSIS compression step with `Internal compiler error #12345: error creating mmap`.
+- The unpacked EXE was generated before that failure and is validated.
+
+Next step:
+- Use `release-fixed15\win-unpacked\动作生成工作台.exe` for manual testing.
+- If a single-file portable EXE is required, retry/fix the NSIS packaging issue separately without changing app behavior.
+
+## Polygon Control Handles And Rotation Axis Pick - 2026-05-10
+
+Current objective:
+- Reduce controller visual clutter and make rotate mode behave closer to common DCC controls: simple polygon handles, pickable X/Y/Z/current-view rotation rings, and less torso overlap.
+
+Current progress:
+- Replaced the large torso/root control rings with smaller simple polygon handles:
+  - Global_CTRL: octagon ground handle.
+  - Root_CTRL: diamond/rect ground handle.
+  - COG_CTRL / Pelvis_CTRL / Chest_CTRL / Head_CTRL: compact hexagon/pentagon/diamond body handles.
+- Reduced filled handle opacity and visual footprint for torso/root/head controls while keeping invisible hit areas for clicking.
+- Rotation mode now provides four selectable ring orientations:
+  - X axis
+  - Y axis
+  - Z axis
+  - current camera/view direction
+- Rotation rings are tagged as transform-gizmo pick targets and highlight on hover.
+- Clicking a rotation ring selects that axis and starts the rotate transform from the current control state.
+- Added `V` in active rotate transform as a view-axis toggle, alongside existing X/Y/Z axis keys.
+- Transform-gizmo size now scales with camera distance and is clamped by rig scale, so zooming in does not leave a huge world-sized ring covering the model.
+- Updated `index.html` app.js query version so browser/EXE load this controller update instead of cached script.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run validate:import`
+- Playwright visual screenshot checks for imported-model polygon controls and rotate gizmo.
+- `npx electron-builder --win portable --config.directories.output=release-fixed14 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- `npx asar list release-fixed14\win-unpacked\resources\app.asar`
+- Start-process smoke test for `release-fixed14\动作生成工作台 0.1.0.exe`
+- Packaged `win-unpacked` import smoke through CDP.
+
+Validation result: PASS
+
+Validation details:
+- `npm run validate:import`: PASS.
+- Latest pipeline screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260510_065955Z.png`
+- Controller/gizmo visual screenshots:
+  - `artifacts/screenshots/polygon_controls_rotate_normal_20260510.png`
+  - `artifacts/screenshots/polygon_controls_rotate_close_scaled3_20260510.png`
+- Packaged `win-unpacked` import smoke:
+  - imported: Loaded
+  - source bones: 39
+  - GLB skins: 1
+- EXE launch smoke:
+  - PASS. Process stayed alive after 8 seconds.
+- Latest EXE:
+  - `release-fixed14\动作生成工作台 0.1.0.exe`
+
+Current blocking issue:
+- None for this controller-visual pass. Remaining behavior work, if needed, should be handled separately from the visual controller cleanup.
+
+Next step:
+- User manual check in `release-fixed14`: import a GLB, bind skeleton, generate IK, select a torso/hand/foot control, switch to `旋转 R`, then click the X/Y/Z/current-view rings.
+
+## EXE Unified Import Fix - 2026-05-10
+
+Current objective:
+- Fix the user-reported issue where the packaged EXE still cannot correctly import a GLB model from the top `导入模型` entry.
+
+Current progress:
+- Removed the EXE-only default import branch from the top toolbar click path.
+- The top `导入模型` entry now always opens the same hidden `#modelFileInput` path in both browser and Electron.
+- This avoids the previous split behavior where the browser used file input but the EXE used `desktopBridge.openGlbFile()`.
+- Updated the `app.js` query string in `index.html` so the new import handler is loaded instead of a stale cached script.
+- Found the actual packaged-EXE failure:
+  - `app.js` was not executing in the packaged app.
+  - `three/examples/jsm/loaders/GLTFLoader.js` and `three/examples/jsm/utils/SkeletonUtils.js` were missing from `app.asar`.
+  - The browser worked because local `node_modules` existed; the EXE only showed static HTML with no working app logic.
+- Updated `package.json` so `node_modules/three/examples/jsm/**/*` is explicitly included in the packaged app.
+- Verified `release-fixed13\win-unpacked\resources\app.asar` contains:
+  - `node_modules\three\examples\jsm\loaders\GLTFLoader.js`
+  - `node_modules\three\examples\jsm\utils\SkeletonUtils.js`
+  - `node_modules\three\examples\jsm\utils\BufferGeometryUtils.js`
+- Verified Electron source behavior by clicking the real top `导入模型` entry:
+  - a file chooser event is emitted
+  - setting `sample_models/stylized_3d_character_model.glb` imports successfully
+  - import result reads 39 source bones and 1 GLB skin
+- Verified packaged `win-unpacked` EXE behavior through CDP:
+  - `window.__motionDebug` exists, proving `app.js` now runs
+  - clicking `导入模型` emits a file chooser event
+  - setting `sample_models/stylized_3d_character_model.glb` imports successfully
+  - import result reads 39 source bones and 1 GLB skin
+
+Files changed:
+- `app.js`
+- `index.html`
+- `package.json`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json ok')"`
+- Electron source file-input smoke test through Playwright `_electron`
+- `npm run validate:import`
+- `npx electron-builder --win portable --config.directories.output=release-fixed12 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- Start-process smoke test for `release-fixed12\动作生成工作台 0.1.0.exe`
+- `npx electron-builder --win portable --config.directories.output=release-fixed13 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- `npx asar list release-fixed13\win-unpacked\resources\app.asar`
+- Packaged `win-unpacked` EXE import smoke through CDP
+- Start-process smoke test for `release-fixed13\动作生成工作台 0.1.0.exe`
+
+Validation result: PASS
+
+Validation details:
+- Electron source import smoke: PASS.
+- Packaged `win-unpacked` EXE import smoke: PASS.
+- `npm run validate:import`: PASS.
+- Latest validation screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260510_043205Z.png`
+- Latest EXE:
+  - `release-fixed13\动作生成工作台 0.1.0.exe`
+- EXE launch smoke:
+  - PASS. Process stayed alive after 8 seconds.
+
+Current blocking issue:
+- None for EXE import. Packaged `win-unpacked` import was verified. The portable EXE was launch-smoked and is built from the same fixed app package.
+
+Next step:
+- User manual check in `release-fixed13`: click `导入模型`, select the GLB, confirm the model and source bones appear.
+
+## Walk_8F Arm Direction Stabilization - 2026-05-10
+
+Current objective:
+- Fix the user-visible issue where applying Walk_8F makes the shoulder/arm area look reversed or crossed near the torso.
+
+Current progress:
+- Changed Walk_8F to favor stable retargeting over decorative torso motion:
+  - Pelvis_CTRL / Chest_CTRL / Head_CTRL rotations are now neutral in the template.
+  - This removes the automatic torso twist that was making the imported character's shoulder area read backwards on some rigs.
+- Replaced generic hand IK placement for Walk_8F:
+  - Walk arms are now generated from the current T-Pose shoulder width and actual side direction.
+  - Forearm and hand joints are placed directly on their own side before syncing IK controls.
+  - Hand IK controls are then attached to the solved hand positions.
+  - Elbow pole controls are placed from the solved elbow, not from a generic template target.
+- Added validation that the whole arm chain stays on its own side:
+  - R_Forearm / R_Hand must remain on the right side.
+  - L_Forearm / L_Hand must remain on the left side.
+  - The validation no longer only checks hand endpoints.
+
+Files changed:
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run validate:import`
+- Visual inspection of `artifacts/screenshots/pipeline_acceptance_20260510_040706Z.png`
+- `npx electron-builder --win portable --config.directories.output=release-fixed11 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- Start-process smoke test for `release-fixed11\动作生成工作台 0.1.0.exe`
+
+Validation result: PASS
+
+Validation details:
+- `npm run validate:import`: PASS.
+- Latest validation screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260510_040706Z.png`
+- Latest EXE:
+  - `release-fixed11\动作生成工作台 0.1.0.exe`
+- EXE smoke:
+  - PASS. Process stayed alive after 8 seconds.
+
+Current blocking issue:
+- Packaged EXE GLB import still needs manual user confirmation because Playwright cannot launch the portable EXE directly through `_electron.launch`; source Electron import path is verified, packaged smoke launch is verified.
+
+Next step:
+- User manual check in `release-fixed11`: import model, confirm direction, bind skeleton, generate IK, apply Walk_8F.
+
+## IK Control Attachment Fix - 2026-05-10
+
+Current objective:
+- Fix the user-reported issue where dragging one controller can leave other IK controllers visually detached from the model.
+
+Current progress:
+- Changed IK end-effector behavior:
+  - Hand IK and Foot IK controls now snap back to the solved hand/foot joint after IK runs.
+  - If a target is outside the limb's reachable range, the controller clamps to the actual reachable hand/foot position instead of staying in space.
+- Changed controller synchronization:
+  - Non-selected controls now resync from the current model joints after a control operation.
+  - Pole controls preserve their manually edited position only while they are the actively changed control.
+  - Other pole controls follow the current limb again instead of being left at stale positions.
+- Updated drag preview:
+  - The final drag command now uses the solved controller position after preview, not the raw mouse-plane point if the limb cannot reach it.
+- Added validation coverage:
+  - After pelvis movement, R/L Hand IK and R/L Foot IK must remain attached to their target joints.
+  - After dragging a foot IK below ground, the foot control must clamp above ground and stay attached to the foot joint.
+
+Files changed:
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run validate:import`
+- `npx electron-builder --win portable --config.directories.output=release-fixed10 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- Start-process smoke test for `release-fixed10\动作生成工作台 0.1.0.exe`
+
+Validation result: PASS
+
+Validation details:
+- `npm run validate:import`: PASS.
+- Latest validation screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260510_034706Z.png`
+- Latest EXE:
+  - `release-fixed10\动作生成工作台 0.1.0.exe`
+- EXE smoke:
+  - PASS. Process stayed alive after 8 seconds.
+
+Current blocking issue:
+- None for the IK controller detachment bug. Remaining visual retarget issues around Walk_8F arm direction are separate.
+
+Next step:
+- User manual check in `release-fixed10`, especially dragging pelvis/feet/hands and applying Walk_8F.
+
+## Import Entry And Workflow Explanation - 2026-05-10
+
+Current objective:
+- Fix the still-reported EXE import click issue and document the actual current model -> skeleton -> IK -> walk workflow logic so the remaining reversed-motion problem is clear.
+
+Current progress:
+- Changed the top toolbar `导入模型` control into a label backed by the real `#modelFileInput` for browser imports.
+- Updated the click handler:
+  - EXE / Electron path now calls `desktopBridge.openGlbFile()` and prevents the label default file-input click.
+  - Browser path now lets the label open the file chooser directly.
+  - Keyboard Enter / Space on the label still opens the file chooser.
+- Added label-style layout rules so the new import label keeps the same compact toolbar appearance.
+- Updated the `app.js` query string in `index.html` to avoid stale browser cache.
+- Confirmed Electron source click calls the patched main-process `dialog.showOpenDialog` once.
+- Current known logic issue for the "still reversed after Walk_8F" report:
+  - Walk_8F is still a generic helper-rig template.
+  - It drives the imported GLB through mapped source-bone direction matching.
+  - It is not yet a true per-model local-axis IK/retarget solver.
+  - Visual reversal can still appear on models with different local hand/arm axes or when the generic hand target path is too close to the body center.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `styles.css`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import`
+- Electron source automation: patched `dialog.showOpenDialog`, clicked `#toolbarImportButton`, confirmed one native dialog call.
+- `npx electron-builder --win portable --config.directories.output=release-fixed9 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- Start-process smoke test for `release-fixed9\动作生成工作台 0.1.0.exe`
+
+Validation result: PASS
+
+Validation details:
+- `npm run validate:import`: PASS.
+- Latest validation screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260510_032246Z.png`
+- Electron dialog path:
+  - launched: true
+  - dialogPatched: true
+  - dialogCalls: 1
+- Latest EXE:
+  - `release-fixed9\动作生成工作台 0.1.0.exe`
+- EXE smoke:
+  - PASS. Process stayed alive after 8 seconds.
+
+Current blocking issue:
+- The import click path is now verified in Electron source, but the remaining Walk_8F visual reversal needs a more structural retarget fix rather than another direction-button patch.
+
+Next step:
+- Replace the current generic Walk_8F hand/arm target logic with a source-rig-aware retarget pass that respects the confirmed model direction, mapped side identity, and each imported bone's local axis basis.
+
+## Walk_8F Hand Wrist Twist Fix - 2026-05-10
+
+Current objective:
+- Investigate why IK binding is mostly correct but loading Walk_8F still makes the hands look reversed, then fix pelvis down / grounded foot behavior reported during manual pose editing.
+
+Current progress:
+- Reproduced the imported GLB flow with the local sample model:
+  - import T-Pose GLB
+  - rotate model right 90 degrees
+  - confirm direction
+  - bind Humanoid_v1
+  - create IK controls
+  - apply Walk_8F
+- Confirmed the root cause:
+  - hand IK target positions stayed on their own left/right sides
+  - Walk_8F was also writing explicit `R_Hand` and `L_Hand` wrist rotations on every key pose
+  - those wrist rotations caused the real GLB hand bones to look flipped/twisted even when IK binding was broadly correct
+- Changed Walk_8F so hand IK controls only drive arm placement and no longer auto-write wrist rotations.
+- Changed the two PASSING key poses so hand forward/back offsets return to neutral instead of crossing through a small opposite offset.
+- Added validation that exported/imported Walk_8F keyframes contain no `R_Hand` / `L_Hand` joint rotation overrides.
+- Moved Walk_8F elbow pole targets outside the body and farther behind the arm plane so elbow bend direction is stable instead of folding across the torso.
+- Added Pelvis_CTRL translation:
+  - moving the pelvis translates hips, spine, arms, and thigh roots
+  - foot IK targets are treated as anchors
+  - legs are re-solved so pelvis can lower into a squat while feet stay planted
+- Added foot-ground clamping for foot IK targets:
+  - foot IK controls cannot be dragged below the ground clamp
+  - the target foot joint is clamped above the model's rest sole/foot height
+- Added validation for pelvis lowering and foot ground clamp.
+- Added an app.js query version in `index.html` so browser refreshes do not keep using a stale cached script.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `scripts/validate_demo_import.mjs`
+- `styles.css` from the previous EXE import trigger fix is still included in the current working tree.
+- `CURRENT_STATE.md`
+
+Commands run:
+- `node --check app.js`
+- `node --check scripts\validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import`
+- Manual Playwright diagnostic for imported GLB Walk_8F hand/foot phase and wrist rotation keys.
+- Manual Playwright screenshot for frame 17 after the wrist fix.
+- `npx electron-builder --win portable --config.directories.output=release-fixed7 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- Start-process smoke test for `release-fixed7\动作生成工作台 0.1.0.exe`
+- `npx electron-builder --win portable --config.directories.output=release-fixed8 --config.win.signAndEditExecutable=false --config.win.signDlls=false`
+- Start-process smoke test for `release-fixed8\动作生成工作台 0.1.0.exe`
+
+Validation result: PASS
+
+Validation details:
+- `npm run validate:import`: PASS.
+- Latest validation screenshot:
+  - `artifacts/screenshots/pipeline_acceptance_20260510_024250Z.png`
+- Diagnostic result after fix:
+  - all 8 Walk_8F key poses have `wristRotKeys: []`
+  - contact/down/up hand swing remains opposite the same-side foot
+- Pelvis / foot validation:
+  - Pelvis_CTRL translate lowers Hips while R_Foot and L_Foot stay planted.
+  - R_Foot_IK dragged below ground clamps above ground.
+- Manual frame screenshot:
+  - `artifacts/screenshots/walk_frame17_hands_after_wrist_fix.png`
+- Latest EXE:
+  - `release-fixed8\动作生成工作台 0.1.0.exe`
+- EXE smoke:
+  - PASS. Process stayed alive after 8 seconds.
+
+Current blocking issue:
+- None in automated checks. Needs user visual check in the browser/EXE because the remaining complaints are visual control behavior.
+
+Next step:
+- User manual check in browser after hard refresh and in `release-fixed8\动作生成工作台 0.1.0.exe`.
+
 ## EXE Import And Aligned Source Rest Fix - 2026-05-10
 
 Current objective:

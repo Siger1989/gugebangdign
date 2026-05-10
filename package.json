@@ -33,6 +33,13 @@
       "electron-main.cjs",
       "electron-preload.cjs",
       "node_modules/three/**/*",
+      {
+        "from": "node_modules/three/examples/jsm",
+        "to": "node_modules/three/examples/jsm",
+        "filter": [
+          "**/*"
+        ]
+      },
       "sample_models/**/*"
     ],
     "win": {

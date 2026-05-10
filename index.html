@@ -58,11 +58,10 @@
 
     <section class="workbench-toolbar" aria-label="工作台工具栏">
       <nav class="flow-steps" aria-label="工作区">
-        <button class="work-action is-active" id="toolbarImportButton" data-stage="model" data-action="import_model" type="button">导入模型</button>
+        <label class="work-action is-active" id="toolbarImportButton" data-stage="model" data-action="import_model" for="modelFileInput" role="button" tabindex="0">导入模型</label>
         <button class="work-action" id="toolbarIdentifyButton" data-stage="skeleton" data-action="identify_skeleton" type="button">骨骼识别</button>
         <button class="work-action" id="toolbarCreateIkButton" data-stage="control_rig" data-action="create_ik" type="button">生成 IK 控制器</button>
         <button class="work-action" id="toolbarMotionButton" data-stage="motion" data-action="open_motion" type="button">动作编辑</button>
-        <button class="work-action" id="toolbarValidateButton" data-stage="validate" data-action="validate_motion" type="button">验证</button>
         <button class="work-action" id="toolbarExportButton" data-stage="export" data-action="export_motion" type="button">导出</button>
       </nav>
       <div class="tool-strip" aria-label="动画工具">
@@ -71,6 +70,13 @@
         <button class="tool-button" data-tool="rotate" type="button">旋转 R</button>
         <button class="tool-button" data-tool="scale" type="button">缩放 S</button>
         <button id="spaceToggleButton" type="button">全局</button>
+        <div class="axis-strip" aria-label="XYZ 轴向快速切换">
+          <button class="axis-button is-active" data-axis="" type="button">自由</button>
+          <button class="axis-button axis-x" data-axis="x" type="button">X</button>
+          <button class="axis-button axis-y" data-axis="y" type="button">Y</button>
+          <button class="axis-button axis-z" data-axis="z" type="button">Z</button>
+          <button class="axis-button" data-axis="view" type="button">视角</button>
+        </div>
       </div>
       <div class="status-strip" aria-label="工作状态">
         <div><span>模型</span><strong id="statusModel">无</strong></div>
@@ -129,28 +135,28 @@
         <div class="viewport-opacity-controls" aria-label="视图透明度控制">
           <label>
             <span>模型</span>
-            <input id="viewportModelOpacityInput" type="range" min="0.15" max="1" step="0.01" value="0.72">
+            <input id="viewportModelOpacityInput" type="range" min="0.15" max="1" step="0.01" value="0.72" tabindex="-1">
             <strong id="viewportModelOpacityValue">0.72</strong>
           </label>
           <label>
             <span>骨架</span>
-            <input id="skeletonOpacityInput" type="range" min="0.05" max="0.9" step="0.01" value="0.28">
+            <input id="skeletonOpacityInput" type="range" min="0.05" max="0.9" step="0.01" value="0.28" tabindex="-1">
             <strong id="skeletonOpacityValue">0.28</strong>
           </label>
           <label>
             <span>控制器</span>
-            <input id="controlOpacityInput" type="range" min="0.05" max="0.9" step="0.01" value="0.32">
+            <input id="controlOpacityInput" type="range" min="0.05" max="0.9" step="0.01" value="0.32" tabindex="-1">
             <strong id="controlOpacityValue">0.32</strong>
           </label>
           <label>
             <span>控制器大小</span>
-            <input id="controlSizeInput" type="range" min="0.35" max="1.6" step="0.01" value="0.82">
-            <strong id="controlSizeValue">0.82</strong>
+            <input id="controlSizeInput" type="range" min="0.35" max="1.6" step="0.01" value="0.68" tabindex="-1">
+            <strong id="controlSizeValue">0.68</strong>
           </label>
           <label>
             <span>控制器线粗</span>
-            <input id="controlThicknessInput" type="range" min="0.05" max="1.2" step="0.01" value="0.28">
-            <strong id="controlThicknessValue">0.28</strong>
+            <input id="controlThicknessInput" type="range" min="0.05" max="1.2" step="0.01" value="0.20" tabindex="-1">
+            <strong id="controlThicknessValue">0.20</strong>
           </label>
         </div>
         <div class="viewport-help">
@@ -167,19 +173,34 @@
           <strong>动画时间轴</strong>
           <div class="timeline-metrics">
             <span>关键帧：<strong id="timelineKeyPoseCount">0 / 24</strong></span>
-            <span>FPS：<strong>24</strong></span>
-            <span>范围：<strong>1-24</strong></span>
+            <span>FPS：<input id="timelineFpsInput" class="metric-number-input" type="number" min="1" max="120" step="1" value="24" aria-label="播放 FPS"></span>
+            <span>窗口：<strong id="timelineRangeValue">1-24</strong><span id="timelinePinnedBadge" class="timeline-pin-badge" hidden>固定</span></span>
+            <span class="timeline-window-controls" aria-label="时间轴窗口控制">
+              <button id="timelinePanLeftButton" class="timeline-metric-button timeline-icon-button" type="button" aria-label="时间轴窗口左移">&lt;</button>
+              <button id="timelineZoomOutButton" class="timeline-metric-button timeline-icon-button" type="button" aria-label="时间轴缩小窗口">-</button>
+              <button id="timelineZoomInButton" class="timeline-metric-button timeline-icon-button" type="button" aria-label="时间轴放大窗口">+</button>
+              <button id="timelinePanRightButton" class="timeline-metric-button timeline-icon-button" type="button" aria-label="时间轴窗口右移">&gt;</button>
+            </span>
+            <button id="timelineResetViewButton" class="timeline-metric-button" type="button">重置窗口</button>
             <span>循环：<strong id="timelineLoopState">开</strong></span>
           </div>
         </div>
         <div class="timeline-transport" aria-label="时间轴播放控制">
           <button id="timelinePlayButton" type="button">播放</button>
           <button id="timelineStopButton" type="button">停止</button>
+          <button id="timelinePrevKeyButton" type="button">上一关键帧</button>
+          <button id="timelineNextKeyButton" type="button">下一关键帧</button>
           <button id="timelineSaveFrameButton" type="button">保存当前帧</button>
+          <button id="timelineDeleteFrameButton" type="button">删除当前帧</button>
+          <button id="timelineCopyFrameButton" type="button">复制当前帧</button>
+          <button id="timelinePasteFrameButton" type="button">粘贴当前帧</button>
+          <button id="timelineMirrorFrameButton" type="button">镜像当前帧</button>
           <button id="timelineSmoothButton" type="button">平滑当前段</button>
+          <button id="validateMotionButton" type="button">验证动作</button>
           <label>
             <span>当前帧</span>
-            <input id="timelineFrameSlider" type="range" min="1" max="24" step="1" value="1">
+            <input id="timelineFrameSlider" type="range" min="1" max="24" step="1" value="1" tabindex="-1">
+            <input id="timelineFrameNumberInput" type="number" min="1" step="1" value="1" aria-label="当前帧编号">
             <strong id="timelineCurrentFrameValue">1 / 24</strong>
           </label>
         </div>
@@ -212,7 +233,7 @@
         </div>
         <label class="field-row">
           <span>模型透明度</span>
-          <input id="modelOpacityInput" type="range" min="0.15" max="1" step="0.01" value="0.72">
+          <input id="modelOpacityInput" type="range" min="0.15" max="1" step="0.01" value="0.72" tabindex="-1">
           <strong id="modelOpacityValue">0.72</strong>
         </label>
         <button id="resetViewButton">重置视角</button>
@@ -235,7 +256,7 @@
           <button id="flipForwardButton" type="button">模型转身180°</button>
           <span>模型旋转</span>
           <label class="direction-angle">
-            <input id="forwardAngleInput" type="range" min="-180" max="180" step="1" value="0">
+            <input id="forwardAngleInput" type="range" min="-180" max="180" step="1" value="0" tabindex="-1">
             <strong id="forwardAngleValue">0°</strong>
           </label>
           <button id="rotateForwardLeftButton" type="button">模型左转15°</button>
@@ -267,6 +288,14 @@
       <section class="inspector-section" data-panel="ik">
         <h2>IK 控制器</h2>
         <p class="stage-note">根据已识别命名的模型骨骼生成 IK 控制器。当前只控制 IK，不展开骨骼细节编辑。</p>
+        <label class="field-row compact">
+          <span>控制逻辑</span>
+          <select id="controlSolveModeSelect">
+            <option value="hybrid">IK/FK 混合</option>
+            <option value="pinned">脚底锁定 IK</option>
+            <option value="basic">简易 IK</option>
+          </select>
+        </label>
         <button id="createIkButton">生成 IK 控制器</button>
         <label class="field-row compact">
           <span>选中控制器</span>
@@ -294,11 +323,6 @@
           <input id="loopToggle" type="checkbox" checked>
         </label>
         <div id="keyframeList" class="keyframe-list"></div>
-      </section>
-
-      <section class="inspector-section" data-panel="validate">
-        <h2>验证</h2>
-        <button id="validateMotionButton">验证动作</button>
         <div class="validation-grid">
           <span>验证报告</span><strong id="validationSummary">未运行</strong>
           <span>脚底滑动</span><strong id="validationFootSliding">未运行</strong>
@@ -312,6 +336,8 @@
         <h2>导出</h2>
         <button id="exportJsonButton">生成 Motion JSON</button>
         <button id="importJsonButton">导入 Motion JSON</button>
+        <button id="exportBindingPresetButton" type="button">导出绑定预设</button>
+        <button id="importBindingPresetButton" type="button">导入绑定预设</button>
         <textarea id="motionJsonText" spellcheck="false" aria-label="动作 JSON"></textarea>
       </section>
 
@@ -347,6 +373,6 @@
       }
     }
   </script>
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./app.js?v=20260510-pointer-only-ranges"></script>
 </body>
 </html>
