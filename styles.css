@@ -124,7 +124,7 @@ button:disabled {
   min-width: 0;
   height: 100dvh;
   max-height: 100dvh;
-  padding-bottom: 138px;
+  padding-bottom: 160px;
   overflow: hidden;
   border-right: 1px solid var(--line);
   background: linear-gradient(180deg, #121a25, #0c1018);
@@ -365,10 +365,18 @@ button:disabled {
   border-radius: 6px;
   background: rgba(8, 12, 19, 0.86);
   box-shadow: 0 0 0 1px rgba(20, 28, 42, 0.9), 0 8px 22px rgba(0, 0, 0, 0.34);
+  cursor: move;
+  user-select: none;
+  touch-action: none;
 }
 
 .transform-value-box.is-visible {
   display: inline-flex;
+}
+
+.transform-value-box.is-dragging {
+  border-color: rgba(184, 148, 255, 0.95);
+  background: rgba(8, 12, 19, 0.94);
 }
 
 .transform-value-label {
@@ -389,6 +397,8 @@ button:disabled {
   font-size: 12px;
   font-weight: 800;
   text-align: right;
+  cursor: text;
+  user-select: text;
 }
 
 .transform-value-close {
@@ -419,7 +429,7 @@ button:disabled {
   bottom: 0;
   left: 0;
   z-index: 20;
-  height: 138px;
+  height: 160px;
   border-top: 1px solid var(--line);
   padding: 8px 10px;
   background: rgba(17, 23, 34, 0.97);
@@ -460,6 +470,16 @@ button:disabled {
   font-size: 10px;
 }
 
+.timeline-transport .timeline-speed-control {
+  grid-template-columns: 34px minmax(84px, 1fr) 48px;
+  flex: 0 1 190px;
+  min-width: 170px;
+}
+
+.timeline-speed-control input[type="range"] {
+  width: 100%;
+}
+
 .timeline-transport input {
   min-width: 0;
   accent-color: var(--accent);
@@ -493,6 +513,17 @@ button:disabled {
 
 .timeline-metrics strong {
   color: var(--text);
+}
+
+.timeline-loop-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.timeline-loop-toggle input {
+  accent-color: var(--ok);
 }
 
 .metric-number-input {
@@ -534,8 +565,8 @@ button:disabled {
 }
 
 .timeline-icon-button {
-  min-width: 24px;
-  padding: 0 4px;
+  min-width: 38px;
+  padding: 0 6px;
   text-align: center;
 }
 
@@ -569,6 +600,71 @@ button:disabled {
   margin-bottom: 6px;
 }
 
+.timeline-loop-region {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: 3px;
+  min-width: 0;
+}
+
+.loop-range-bar {
+  align-self: center;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) 12px;
+  align-items: center;
+  min-width: 0;
+  height: 14px;
+  border: 1px solid rgba(85, 227, 141, 0.72);
+  border-radius: 4px;
+  background: rgba(85, 227, 141, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(12, 18, 28, 0.46);
+  cursor: grab;
+}
+
+.loop-range-bar.is-disabled {
+  border-color: rgba(148, 166, 189, 0.34);
+  background: rgba(148, 166, 189, 0.12);
+  opacity: 0.72;
+}
+
+.loop-range-bar.is-preview {
+  border-color: rgba(184, 148, 255, 0.95);
+  background: rgba(184, 148, 255, 0.20);
+}
+
+.loop-range-handle {
+  width: 12px;
+  height: 14px;
+  border: 0;
+  background: rgba(85, 227, 141, 0.9);
+  cursor: ew-resize;
+}
+
+.loop-range-handle.is-start {
+  border-radius: 3px 0 0 3px;
+}
+
+.loop-range-handle.is-end {
+  border-radius: 0 3px 3px 0;
+}
+
+.loop-range-fill {
+  min-width: 0;
+  height: 100%;
+  cursor: grab;
+}
+
+.timeline-insert-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 5;
+  width: 2px;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(184, 148, 255, 0.65), 0 0 14px rgba(184, 148, 255, 0.85);
+  pointer-events: none;
+}
+
 .frame-tick {
   min-width: 0;
   min-height: 18px;
@@ -599,6 +695,11 @@ button:disabled {
 .frame-tick.is-selected {
   background: rgba(184, 148, 255, 0.24);
   color: #ffffff;
+}
+
+.frame-tick.is-drop-target {
+  border-color: #ffffff;
+  background: rgba(184, 148, 255, 0.30);
 }
 
 .timeline-keyframes {
@@ -731,6 +832,34 @@ button:disabled {
 .field-row input[type="range"] {
   padding: 0;
   accent-color: var(--accent);
+}
+
+.motion-brain-input {
+  margin-top: 8px;
+}
+
+.motion-brain-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.motion-brain-actions button {
+  min-width: 0;
+}
+
+.motion-brain-preview {
+  max-height: 148px;
+  margin: 8px 0 10px;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid rgba(184, 148, 255, 0.28);
+  border-radius: 6px;
+  background: rgba(8, 12, 19, 0.52);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+  white-space: pre-wrap;
 }
 
 .info-grid,
@@ -1059,11 +1188,11 @@ button:disabled {
 
   .stage-panel {
     grid-template-rows: auto minmax(0, 1fr);
-    padding-bottom: 126px;
+    padding-bottom: 148px;
   }
 
   .timeline-panel {
-    height: 126px;
+    height: 148px;
     padding: 6px 8px;
   }
 
@@ -1308,7 +1437,7 @@ button:disabled {
   grid-template-rows: minmax(0, 1fr);
   height: auto;
   max-height: none;
-  padding-bottom: 176px;
+  padding-bottom: 198px;
 }
 
 .inspector-panel {
@@ -1319,7 +1448,7 @@ button:disabled {
 }
 
 .timeline-panel {
-  height: 176px;
+  height: 198px;
 }
 
 .timeline-transport {
@@ -1335,7 +1464,7 @@ button:disabled {
 
 .timeline-track-labels {
   display: grid;
-  grid-template-rows: 18px repeat(5, 18px);
+  grid-template-rows: 16px 18px repeat(5, 18px);
   gap: 4px;
   color: var(--muted);
   font-size: 10px;
@@ -1352,7 +1481,8 @@ button:disabled {
 
 .timeline-dopesheet {
   display: grid;
-  grid-template-rows: 18px repeat(5, 18px);
+  position: relative;
+  grid-template-rows: 16px 18px repeat(5, 18px);
   gap: 4px;
   min-width: 0;
 }
@@ -1464,11 +1594,11 @@ button:disabled {
   }
 
   .stage-panel {
-    padding-bottom: 156px;
+    padding-bottom: 178px;
   }
 
   .timeline-panel {
-    height: 156px;
+    height: 178px;
   }
 
   .timeline-head {
@@ -1481,7 +1611,7 @@ button:disabled {
 
   .timeline-track-labels,
   .timeline-dopesheet {
-    grid-template-rows: 16px repeat(5, 15px);
+    grid-template-rows: 14px 16px repeat(5, 15px);
     gap: 3px;
   }
 
@@ -1632,7 +1762,7 @@ button,
 }
 
 .stage-panel {
-  padding-bottom: 128px;
+  padding-bottom: 150px;
 }
 
 .inspector-panel {
@@ -1720,7 +1850,7 @@ button,
 }
 
 .timeline-panel {
-  height: 128px;
+  height: 150px;
   padding: 6px 8px;
 }
 
@@ -1752,7 +1882,7 @@ button,
 
 .timeline-track-labels,
 .timeline-dopesheet {
-  grid-template-rows: 15px repeat(5, 13px);
+  grid-template-rows: 13px 15px repeat(5, 13px);
   gap: 2px;
 }
 
@@ -1815,11 +1945,11 @@ button,
   }
 
   .stage-panel {
-    padding-bottom: 116px;
+    padding-bottom: 138px;
   }
 
   .timeline-panel {
-    height: 116px;
+    height: 138px;
   }
 
   .viewport-opacity-controls {

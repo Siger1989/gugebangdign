@@ -1,45 +1,69 @@
 # 动作生成工作台交接文档
 
-更新时间：2026-05-11 07:29 CST
-工作目录：`D:\codex骨骼绑定`
-当前分支：`main`
-远端仓库：`origin https://github.com/Siger1989/gugebangdign`
+更新时间：2026-05-11 19:13 +08:00
+当前工作目录：`E:\codex骨骼软件`
+发布 Git 工作目录：`E:\codex骨骼软件_github_publish`
+发布远端：`origin https://github.com/Siger1989/gugebangdign.git`
+当前发布分支：`main`
 
-## 当前定位
+## Latest Update - 2026-05-12
 
-这个项目是一个基于浏览器 / Electron 的中文动作生成工作台 MVP。当前目标不是替代 Blender，而是打通一条稳定的角色动作编辑闭环：
+- Motion Brain UI is now a two-step flow:
+  - `生成 / 自检文字动作` compiles the text prompt, runs the quality gate, and keeps the current timeline unchanged.
+  - `加载文字生成动作` writes the passed text-generated result into the timeline.
+- The text-load button is disabled until a Motion Brain result has passed validation, and disabled again after that result is loaded.
+- The old command `generate_motion_from_text` still works for debug/API compatibility, but the visible UI uses preview + explicit load.
+- Validation no longer uses the current action pose to decide left/right bone identity. It checks the saved/rest skeleton instead, so `Punch_R_12F` or other crossing attack poses do not falsely fail with a left/right identity mismatch.
+- New regression coverage was added in `scripts/validate_demo_import.mjs` for the Motion Brain preview/load UI flow and Punch template rest-skeleton identity validation.
+- Latest validation:
+  - `node --check app.js`: PASS
+  - `node --check scripts\validate_demo_import.mjs`: PASS
+  - `npm run check`: PASS
+  - `npm run validate:import`: PASS
+- Logs:
+  - `artifacts/logs/npm_check_text_motion_load_20260512.log`
+  - `artifacts/logs/validate_text_motion_load_20260512.log`
+- Git publish:
+  - Branch `main`
+  - Latest commit message `Add motion brain pipeline and rig workflow fixes`
+  - Remote push PASS
+
+## 项目定位
+
+这是一个基于浏览器 / Electron 的中文角色动作生成工作台 MVP。核心目标不是替代 Blender，而是打通一条可复用的动作生成与修正流程：
 
 ```text
 导入 GLB 模型
--> 识别或手动赋值骨骼
--> 生成 IK / Control Rig 控制器
--> 加载或编辑动作关键帧
--> 精调控制器
--> 验证动作质量
+-> 识别或手动绑定骨骼
+-> 调整并保存初始骨骼
+-> 生成 IK/FK 控制器
+-> 通过动作模板或 Motion Brain 生成控制器关键帧
+-> 手动精修控制器
+-> MotionCritic / Validator 自检
 -> 导出 Motion JSON
 ```
 
-重点工作流已经从“只能识别标准人形骨架”扩展到“不完整或未命名骨架也能进入手动赋值流程”。
+当前最重要的原则是：最终动画写控制器关键帧，不直接写死最终骨骼姿势。自然语言动作生成必须走 Motion Brain 管线，不能绕过 Validator 和 AutoFixer。
 
 ## 运行方式
 
 ```powershell
-cd D:\codex骨骼绑定
+cd E:\codex骨骼软件
 npm install
 npm run start
 ```
 
-打开：
+浏览器打开：
 
 ```text
 http://localhost:8780/index.html
 ```
 
-不要直接用 `file:///.../index.html` 打开。Three.js import map、本地模型和 Playwright 验证都依赖 HTTP 静态服务。
+不要用 `file:///.../index.html` 直接打开。Three.js import map、本地模型和 Playwright 验证都依赖 HTTP 静态服务。
 
 ## 验证方式
 
-上传前应至少运行：
+每轮重要修改后至少运行：
 
 ```powershell
 node --check app.js
@@ -48,126 +72,211 @@ npm run check
 npm run validate:import
 ```
 
-本次上传前验证结果：PASS。
+本轮验证结果：PASS。
 
-最新截图：
+最新验证日志：
 
 ```text
-artifacts/screenshots/pipeline_acceptance_20260510_233101Z.png
+artifacts/logs/npm_check_rotate_length_20260511_b.log
+artifacts/logs/validate_rotate_length_20260511_b.log
+artifacts/screenshots/pipeline_acceptance_20260511_110954Z.png
 ```
+
+## 本轮修复重点
+
+### 1. R 后手腕乱飞 / 控制线变长
+
+根因不是 `R` 旋转公式本身，而是状态污染：
+
+- 用户点击“保存初始骨骼”之后，骨骼识别阶段的临时拖动仍然自动写进 `skeleton.rest_joints`。
+- 生成 IK/FK 时又拿这个未再次保存的草稿骨骼作为 rest baseline。
+- 结果是 `R_Hand_IK` 进入动作编辑阶段时已经在异常远的位置，后续 `R VIEW` 旋转看起来像手腕飞出去。
+
+修复策略：
+
+- `initial_rest_joints` 成为用户显式保存后的权威初始骨骼。
+- 保存后继续在骨骼识别阶段拖动，只标记为草稿修改：`initial_skeleton_dirty = true`。
+- 只有再次点击“保存初始骨骼”，草稿才会覆盖正式初始骨骼。
+- 生成 IK/FK 时强制从 `initial_rest_joints` 恢复 `joints` 和 `rest_joints`。
+- `restoreCoreState()` 和 `startKeyboardTransform()` 会同步手/脚 IK 端点到已解算的手腕/脚踝，避免 undo、阶段切换或旧状态留下长线目标。
+
+关键位置：
+
+- `app.js`
+  - `saveCurrentSkeletonAsInitial()`
+  - `prepareSavedInitialSkeletonForControlRig()`
+  - `getLockedInitialRestJoints()`
+  - `syncEndEffectorControlsToJoints()`
+  - `persistEditableAssignmentRestJoints()`
+  - `startKeyboardTransform()`
+
+### 2. 骨骼识别阶段仍可调整长度
+
+这次没有取消骨骼识别阶段的长度调整能力。
+
+当前规则：
+
+- 生成 IK/FK 前，临时骨骼控制器仍允许拖动和缩放。
+- 如果用户想让这次调整成为后续控制器绑定基准，必须点击“保存初始骨骼”。
+- 如果用户保存后又乱拖，没有再次保存，生成 IK/FK 会回到最后保存的初始骨骼。
+
+这个行为符合用户现在要求的流程：
+
+```text
+绑定/赋值骨骼
+-> 调整骨骼
+-> 保存初始骨骼
+-> 生成 IK/FK 控制器
+-> 加载或生成动作
+```
+
+### 3. Motion Brain 自检闭环
+
+Motion Brain 目前已经不是单纯模板系统，而是自然语言动作编译器雏形：
+
+```text
+文本
+-> ActionIntentParser
+-> ActionIRBuilder
+-> MotionPlanner
+-> PrimitiveComposer
+-> ControllerCurveGenerator
+-> RigSolver / app 侧解算
+-> PoseSampler
+-> PoseFeatureExtractor
+-> MotionCritic / MotionQualityGate
+-> ActionValidator
+-> ActionAutoFixer
+-> 重新解算和验证
+```
+
+已修复的重要问题：
+
+- AutoFix 之后会重新解算、重新采样、重新 Critic，不再“修了但不复查”。
+- 普通 idle / walk / run 会严格拦截 T Pose/A Pose 残留、手臂过高、普通 locomotion 使用 HandIK 等问题。
+- attack / interaction / gesture 会按 intent 区分，不会把举手、推门、攻击误判为普通 T Pose。
+- legacy 动作模板也纳入自检，避免 `Idle_Breathe` 绕过 Motion Brain 自审。
 
 ## 当前稳定能力
 
-- 导入带 skin / joints 的 GLB，并生成可视化骨架参考。
+- 导入带 skin / joints 的 GLB，并生成可视化骨骼参考。
 - 对标准或近似人形骨架生成 `Humanoid_v1` 映射。
-- 对识别不完整的模型生成可编辑赋值骨架，允许把标准关键点拖到源骨骼上完成手动绑定。
-- 支持绑定预设导入 / 导出，格式为 `humanoid_binding_preset_v1`。
-- 支持生成 IK / Control Rig，包括全局、重心、骨盆、胸腔、头、手、脚、肘 pole、膝 pole 等控制器。
-- 支持控制器多选、排除选择、批量变换。
-- 支持 ZBrush 风格的变换手柄和 Blender 风格 `G` / `R` / `S` 快捷键。
-- 支持精确变换数值框：移动、旋转、缩放时保留数值输入，可手动改值或复制。
-- 支持复制当前帧、粘贴当前帧、镜像当前帧、删除当前帧关键帧。
-- 时间轴不再固定 24 帧，可滚轮缩放、平移窗口、跳转并自动扩展总帧数。
-- 手动缩放 / 平移时间轴后会进入固定视图状态，旁边显示 `固定` 标记；重置窗口后解除固定。
-- Motion JSON 导出前会在存在关键帧且验证过期时自动触发验证，并写入导出元数据。
-- 支持可编辑 FPS，并在播放中修改后更新播放节奏。
-
-## 最近完成的关键改动
-
-1. 可编辑赋值骨架
-   - 对未识别或缺失关节的模型，根据模型包围盒估算缺失的人形关键点。
-   - 用户可拖动标准关节点到源骨骼位置。
-   - 吸附到源骨骼后自动写入映射，并清理重复绑定。
-   - 休息姿态写入 `skeleton.rest_joints`，供后续 IK 和控制器生成使用。
-
-2. 绑定预设
-   - 新增绑定预设导出 / 导入。
-   - 导入后恢复拟合骨架、源骨骼映射和休息姿态。
-   - 适合给同一类模型复用一次手工赋值结果。
-
-3. 时间轴专业化
-   - 当前帧可以直接输入数字跳转。
-   - 跳转到超出范围的帧会扩展总帧数。
-   - 支持滚轮缩放、Shift + 滚轮平移、按钮缩放 / 平移。
-   - 增加固定窗口状态，避免用户精调某段时间轴时自动跳走。
-
-4. 控制器和变换手感
-   - 控制器支持多选后一起调整。
-   - 变换数值框会保留到用户确认或关闭，便于左右侧精确对称调整。
-   - 自由移动显示的是本次拖动位移长度；轴向移动显示对应轴增量；视角旋转显示度数。
-   - 旋转视角模式围绕当前相机视图轴处理，避免手腕位置被错误跳动。
-
-5. 动作验证和导出
-   - 自动化脚本覆盖导入、识别、赋值骨架、IK 生成、关键帧编辑、时间轴、导出等流程。
-   - 导出 Motion JSON 时携带验证状态、FPS、关键帧和控制器数据。
+- 在骨骼识别阶段手动调整标准关节点，再保存为初始骨骼。
+- 生成 IK/FK 控制器：Global、Root、COG、Pelvis、Chest、Head、HandIK、FootIK、Pole、FK joint control。
+- 动作编辑阶段支持 G/R/S、视角轴旋转、XYZ 轴切换、多选控制器、数值输入框。
+- 时间轴支持关键帧、循环区间、速度滑块、窗口缩放和平移、片段拖动插入。
+- Motion Brain 支持普通走路、奔跑、站立呼吸、跳跃、双手武器横挥、推门、后退撞墙、捡武器、右拳前挥、躺下、举手挥手等语义。
+- 导出 Motion JSON。
 
 ## 关键文件
 
-- `index.html`：中文 UI 结构、顶部流程栏、右侧检查器、底部时间轴。
-- `styles.css`：整体布局、控制面板、时间轴、数值框、绑定面板样式。
-- `app.js`：核心逻辑，包含 Three.js 场景、命令系统、骨架识别、赋值骨架、IK、时间轴、验证和导出。
-- `scripts/validate_demo_import.mjs`：Playwright 自动化验收脚本。
-- `package.json`：本地运行、语法检查、Playwright 验证脚本。
-- `CURRENT_STATE.md`：长任务状态、每轮自检记录、验证结果。
-- `backups/snapshot_20260511_010246_assignment_final`：当前长期优化任务的同步备份目录。
+- `app.js`：主应用逻辑，包含 Three.js 场景、状态管理、命令系统、骨骼识别、IK/FK、时间轴、Motion Brain UI 集成和导出。
+- `index.html`：中文 UI 结构。
+- `styles.css`：布局、面板、时间轴、控制器 UI 样式。
+- `motion_brain/`：自然语言动作编译器核心模块。
+- `docs/MOTION_BRAIN.md`：Motion Brain 管线说明。
+- `docs/ACTION_GRAMMAR.md`：动作语法说明。
+- `docs/ACTION_VALIDATION.md`：动作验证和质量门说明。
+- `scripts/validate_demo_import.mjs`：Playwright 端到端验证。
+- `CURRENT_STATE.md`：长任务状态记录，恢复上下文时优先读取。
+- `HANDOFF.md`：当前交接文档。
 
-所有会修改状态的功能都应走 `executeCommand(command)`。不要在 UI 事件里直接改 `MotionState`、骨骼、IK 控制器或关键帧。
+## Motion Brain 模块
+
+- `motion_brain/action_intent.js`
+- `motion_brain/action_intent_parser.js`
+- `motion_brain/action_ir.js`
+- `motion_brain/action_ir_builder.js`
+- `motion_brain/action_grammar.js`
+- `motion_brain/action_primitive_library.js`
+- `motion_brain/primitive_composer.js`
+- `motion_brain/action_prototype_library.js`
+- `motion_brain/motion_planner.js`
+- `motion_brain/controller_curve_generator.js`
+- `motion_brain/pose_sampler.js`
+- `motion_brain/pose_feature_extractor.js`
+- `motion_brain/motion_critic.js`
+- `motion_brain/motion_quality_gate.js`
+- `motion_brain/intent_fulfillment_validator.js`
+- `motion_brain/action_validator.js`
+- `motion_brain/action_auto_fixer.js`
+- `motion_brain/motion_brain_pipeline.js`
+- `motion_brain/llm_adapter.js`
+
+统一入口是：
+
+```js
+MotionBrain.generate_from_text(text)
+```
+
+app 侧命令入口是：
+
+```js
+executeCommand(createCommand("generate_motion_from_text", { text: "生成一个自然站立呼吸" }))
+```
 
 ## 调试入口
 
-常用浏览器调试 API：
-
-- `window.MotionState`
-- `window.executeCommand(...)`
-- `window.getTimelineViewState()`
-- `window.getTransformValueBoxState()`
-- `window.exportMotionJson()`
-- `window.exportBindingPresetJson()`
-
-常用命令示例：
+浏览器控制台常用：
 
 ```js
-executeCommand({ type: "load_test_dummy" });
-executeCommand({ type: "create_humanoid_skeleton" });
-executeCommand({ type: "create_ik_controls" });
-executeCommand({ type: "apply_motion_template", template_id: "walk_cycle_8f" });
-executeCommand({ type: "set_current_frame", frame: 48 });
-executeCommand({ type: "zoom_timeline_view", factor: 0.8 });
-executeCommand({ type: "export_motion_json" });
+window.__motionDebug.getMotionState()
+window.__motionDebug.getMotionStateSummary()
+window.__motionDebug.executeCommandByName("generate_motion_from_text", { text: "生成一个普通走路" })
+window.__motionDebug.getMotionBrainLastResult()
+window.__motionDebug.getMotionTemplateSelfCheck()
+window.__motionDebug.getIkControlScreenPositions()
+window.__motionDebug.getTransformGizmoDebug()
+window.__motionDebug.getTimelineViewState()
+```
+
+命令示例：
+
+```js
+executeCommand(createCommand("load_test_dummy", {}));
+executeCommand(createCommand("create_humanoid_skeleton", {}));
+executeCommand(createCommand("save_initial_skeleton", {}));
+executeCommand(createCommand("create_ik_controls", {}));
+executeCommand(createCommand("generate_motion_from_text", { text: "向前挥出右拳" }));
+executeCommand(createCommand("export_motion_json", {}));
 ```
 
 ## 已知限制
 
-- 目前导出主要是 Motion JSON，还不是完整 glTF animation sampler / channel。
-- IK 仍是轻量控制器，不是完整 DCC 级 rig；关节限位、FK/IK 权重混合、复杂 pole 稳定器还需要继续做。
-- 自动骨骼识别仍偏人形；怪物、机械、多足、翅膀等需要专门模板。
-- 手动赋值骨架已经可用，但还需要更完整的批量命名、镜像赋值和错误提示。
-- 验证页签目前保留为功能入口，质量检查还不是最终专业级动画体检。
+- 导出仍主要是 Motion JSON，不是完整 glTF animation sampler/channel。
+- IK/FK 是轻量控制器，不是完整 DCC 级 rig。
+- 物理辅助层目前只预留数据结构，还没有完整 ragdoll 或接触物理。
+- Parser 现在是关键词规则版，未来 LLM 只能输出 ActionIR JSON 或 MotionPlan JSON 草案，不能直接写骨骼关键帧。
+- MotionCritic 是启发式质量门，还不是专业动画师级审美评分器。
+- 当前发布工作目录和开发工作目录分离：开发在 `E:\codex骨骼软件`，Git 发布在 `E:\codex骨骼软件_github_publish`。
 
-## 下一步建议
+## 后续建议
 
-1. 做时间轴快捷键层：缩放、平移、跳关键帧时不与 G / R / S 变换冲突。
-2. 完善手动赋值骨架：增加镜像赋值、批量清空、未绑定关节高亮。
-3. 增加 FK/IK 真正权重混合，让 `IK/FK 混合` 能在 0-1 权重上可见。
-4. 完善脚底锁定和地面约束，减少走路模板里脚掌穿地或滑动。
-5. 把验证面板改成明确的动作质量报告，而不是一个容易误点的流程页签。
-6. 增加标准动作库和导入动作重定向，避免 Walk_8F 成为唯一模板。
+1. 把 `E:\codex骨骼软件` 直接初始化为 Git 仓库，或固定只在 `E:\codex骨骼软件_github_publish` 开发，避免双目录同步风险。
+2. 增加“保存初始骨骼后有未保存草稿修改”的 UI 提示。
+3. 把 Motion Brain debug 面板做成可折叠表格，展示 ActionIR、primitives、critic issues、autofix iterations。
+4. 给 FK/IK Blend 做真实 0-1 混合显示和关键帧记录。
+5. 扩展动作原子库，而不是继续给每个动作写固定模板。
+6. 接入 LLM 时只允许 LLM 输出 ActionIR / MotionPlan JSON，并继续走现有 Validator / AutoFixer。
 
 ## 接手步骤
 
 ```powershell
-cd D:\codex骨骼绑定
-git status
-git diff --stat
-Get-Content CURRENT_STATE.md -Tail 120
+cd E:\codex骨骼软件
+Get-Content CURRENT_STATE.md -Tail 160
+node --check app.js
+node --check scripts\validate_demo_import.mjs
 npm run check
 npm run validate:import
 ```
 
-如果从备份恢复，请优先使用：
+如果要发布到 Git：
 
-```text
-backups/snapshot_20260511_010246_assignment_final
+```powershell
+cd E:\codex骨骼软件_github_publish
+git status
+git log --oneline -5
+git remote -v
 ```
 
-恢复后仍要重新运行 `npm run validate:import`，不要只相信备份文件时间。
+然后确认 `E:\codex骨骼软件` 与发布目录同步后再提交。

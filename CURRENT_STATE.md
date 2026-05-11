@@ -1,5 +1,634 @@
 # CURRENT_STATE
 
+## Text Motion Load Button And Validation Fix - 2026-05-12
+
+Current objective:
+- Fix the Motion Brain UI flow so text-generated motion is not confused with template loading:
+  - Generate/self-check text motion first.
+  - Only load it to the timeline after it passes the quality gate.
+- Fix validation false positives where dynamic attack poses, such as `Punch_R_12F`, were reported as left/right bone identity mismatch.
+
+Current progress:
+- Added a separate `load_motion_brain_result` command and `加载文字生成动作` button.
+- Changed the visible Motion Brain button to run `preview_motion_from_text`, which compiles and self-checks the text motion but restores the existing timeline until the user explicitly loads it.
+- The load button is enabled only for a passed, not-yet-loaded Motion Brain result.
+- Direct API command `generate_motion_from_text` still works and marks the result as loaded for compatibility.
+- `buildValidationReport()` now checks left/right bone identity from the saved/rest skeleton instead of the current posed frame, so a right punch crossing the center line no longer looks like a rig identity error.
+- Added regression coverage for:
+  - Motion Brain UI preview + load flow.
+  - Punch template validation using rest skeleton identity.
+
+Files changed:
+- `CURRENT_STATE.md`
+- `app.js`
+- `index.html`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+
+Validation result: PASS.
+
+Commands run:
+- `node --check app.js`: PASS
+- `node --check scripts\validate_demo_import.mjs`: PASS
+- `npm run check`: PASS
+- `npm run validate:import`: PASS
+
+Validation details:
+- Full validation log: `artifacts/logs/validate_text_motion_load_20260512.log`
+- NPM check log: `artifacts/logs/npm_check_text_motion_load_20260512.log`
+- Acceptance screenshot: `artifacts/screenshots/pipeline_acceptance_20260512_015733Z.png`
+
+Current blocking issue:
+- Browser plugin connection timed out during manual in-app check, but the local Playwright validation covered the UI flow.
+- GitHub push succeeded after syncing to the publishing repo.
+
+Git publish:
+- Publish repo: `E:\codex骨骼软件_github_publish`
+- Branch: `main`
+- Commit: latest `Add motion brain pipeline and rig workflow fixes` on `main`
+- Remote push: PASS
+
+Next step:
+- Hard refresh `http://localhost:8780/index.html`.
+- Use Motion Brain panel:
+  1. Enter text.
+  2. Click `生成 / 自检文字动作`.
+  3. If the report passes, click `加载文字生成动作`.
+
+## Template Idle And Rest Pose Persistence - 2026-05-11
+
+Current objective:
+- Fix two related workflow issues:
+  - Legacy action template `Idle_Breathe` raises both arms and bypasses Motion Brain self-critique.
+  - A user-saved initial skeleton/rest pose can be overwritten when generating IK/FK or loading actions.
+
+Current progress:
+- User clarified the screenshot is from the action template dropdown, with `Motion Brain: 尚未生成`.
+- Diagnosis:
+  - Prior Motion Brain self-critic fix does not cover the legacy `apply_motion_template` path.
+  - Legacy templates need either the same relaxed-arm post process or a quality gate before writing keyframes.
+  - `create_ik_controls` currently calls `saveCurrentSkeletonAsInitial()` unconditionally, which can overwrite the previously saved custom initial skeleton with the current animated/edited pose.
+
+Files changed:
+- `CURRENT_STATE.md`
+
+Validation result: Not run yet.
+
+Current blocking issue:
+- Need patch template generation and IK creation state flow.
+
+Next step:
+- Preserve saved rest pose unless the user explicitly clicks save, and make Idle/locomotion templates generate relaxed arms from the saved rest pose.
+
+## Initial Skeleton Persistence Regression - 2026-05-11
+
+Current objective:
+- Fix the workflow where users bind/assign bones, adjust the skeleton, save the initial skeleton, then generate IK/FK and load actions, but the adjusted saved skeleton appears to be lost.
+
+Current progress:
+- Started after user clarified the intended flow:
+  - Bone recognition / assignment first.
+  - Manual skeleton adjustment before IK generation.
+  - Save adjusted skeleton as initial/rest pose.
+  - Generate IK/FK controls.
+  - Load/generate actions from that saved rest pose.
+- Suspected issue:
+  - A later command is likely re-saving or rebuilding the skeleton and overwriting `skeleton.rest_joints`.
+
+Files changed:
+- `CURRENT_STATE.md`
+
+Validation result: Not run yet.
+
+Current blocking issue:
+- Need inspect `saveCurrentSkeletonAsInitial`, `create_ik_controls`, action/template loading, and skeleton rebuild paths.
+
+Next step:
+- Patch the state flow so saved custom rest joints are preserved unless the user explicitly saves again or rebinds mapping.
+
+## Idle Breath Self-Critic Regression - 2026-05-11
+
+Current objective:
+- Fix the Motion Brain regression where `生成一个自然站立呼吸` produces raised arms while UI validation still reports passed.
+
+Current progress:
+- User showed in-app screenshots where generated idle/breath lifts both arms overhead.
+- Diagnosis so far:
+  - This is not acceptable for idle/breath.
+  - MotionCritic should produce a blocker for ordinary idle with high arms / HandIK usage / T/A pose residue.
+  - AutoFix should force relaxed FK arms and revalidate, not leave the clip accepted.
+- Browser plugin connection timed out twice; continuing through the existing local validation/debug scripts.
+- Reproduced the imported-GLB failure path with Playwright:
+  - Before the fix, MotionCritic could detect `ARM_TOO_HIGH` and `TPOSE_RESIDUE`, but the command still left the failed/generated clip on the live timeline.
+  - The first relaxed-arm AutoFix still depended too much on imported bone local axes, so it could leave arms high on some GLB rigs.
+- Implemented global fixes:
+  - `ActionAutoFixer` now marks ordinary idle/walk/run arm fixes with `relaxed_arm_pose`.
+  - `app.js` applies `relaxed_arm_pose` through a shared world/basis arm guide, not through model-specific local bone axes.
+  - Motion Brain blocker results are rejected from the timeline globally; the last report remains visible, but failed generated keyframes do not overwrite the current accepted motion.
+  - Idle visible-motion thresholds are lower than action/locomotion thresholds, so subtle breathing can pass without allowing a static pose.
+  - Walk arm-swing fulfillment now only blocks if there is effectively no swing; small amplitude remains a critic warning.
+- Added regression coverage:
+  - Imported GLB `生成一个自然站立呼吸` must pass with hands below chest, HandIK disabled, no ARM/TPOSE critic issue, and relaxed FK arm fix applied.
+  - A blocker result such as generic fallback must not overwrite the current accepted timeline.
+
+Files changed:
+- `CURRENT_STATE.md`
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `motion_brain/action_auto_fixer.js`
+- `motion_brain/action_validator.js`
+- `motion_brain/intent_fulfillment_validator.js`
+
+Validation result: PASS.
+
+Current blocking issue:
+- None.
+
+Next step:
+- Manual browser check: reload `http://localhost:8780/index.html`, import or use the sample character, generate `生成一个自然站立呼吸`, and confirm the preview/debug panel shows Motion Brain passed with relaxed arms.
+
+Validation details:
+- Failed reproduction log before threshold fix: `artifacts/logs/validate_motion_brain_idle_gate_20260511_160140.log`
+- Full validation log: `artifacts/logs/validate_motion_brain_idle_gate_20260511_160458.log`
+- NPM check log: `artifacts/logs/npm_check_motion_brain_idle_gate_20260511_160616.log`
+- Regression screenshots:
+  - `artifacts/screenshots/idle_breath_glb_after_visible_threshold.png`
+  - `artifacts/screenshots/pipeline_acceptance_20260511_080500Z.png`
+
+## Motion Brain ActionIR Compiler - 2026-05-11
+
+Current objective:
+- Convert the existing Motion Brain from a template-like natural-language generator into an extensible ActionIR-driven compiler pipeline with parser confidence, primitive composition, intent fulfillment validation, critic/autofix loop, and explainable debug output.
+
+Current progress:
+- Started after user clarified this must not keep growing as one-off action templates.
+- Scanned existing project and confirmed reusable systems already exist:
+  - IK/FK/Pole/Root/COG/Pelvis/Chest/Head controls in `app.js`.
+  - Timeline/keyframes/playback/export in `app.js`.
+  - Existing `motion_brain/` modules for intent parser, grammar, primitive library, prototype library, planner, controller curve generator, pose sampler, pose feature extractor, MotionCritic, quality gate, validator, and auto fixer.
+- Identified missing architecture pieces:
+  - ActionIR / ActionSemanticFrame.
+  - ActionIRBuilder.
+  - PrimitiveComposer.
+  - IntentFulfillmentValidator.
+  - Strong parser confidence / generic fallback gating.
+  - More explicit coordinate-space documentation and debug fields.
+- Implemented the missing compiler layers:
+  - `ActionIntentParser` now emits parser confidence, parsed verbs/body parts/direction/target, missing slots, and uncertainty flags.
+  - `ActionIRBuilder` compiles parser output into ActionIR.
+  - `PrimitiveComposer` parameterizes primitives by effector/target/direction/timing instead of using one-off action templates.
+  - `IntentFulfillmentValidator` checks solved-pose features against ActionIR.
+  - `MotionBrainPipeline.generate_from_text()` now returns ActionIR, primitive sequence, validation, critic, autofix, and debug trace data.
+- Added parser and grammar support for:
+  - forward right/left hand strike.
+  - lie down / standing to ground.
+  - push door/object interactions.
+  - panic backward wall impact reaction.
+  - walk/run/jump/idle/gesture/pickup/generic fallback.
+- Added blocker behavior for low-confidence generic fallback: it can produce a visible draft action, but cannot be accepted as fully passed.
+- Updated UI debug preview to show parser result, ActionIR, phases, primitives, controller tracks, critic issues, intent-fulfillment result, validator result, autofix actions, and final state.
+- Updated docs for ActionIR pipeline, coordinate-space conventions, validation gates, LLM guardrails, and PhysicsAssistLayer placeholders.
+
+Files changed:
+- `CURRENT_STATE.md`
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `motion_brain/action_intent.js`
+- `motion_brain/action_intent_parser.js`
+- `motion_brain/action_grammar.js`
+- `motion_brain/action_primitive_library.js`
+- `motion_brain/action_ir.js`
+- `motion_brain/action_ir_builder.js`
+- `motion_brain/primitive_composer.js`
+- `motion_brain/motion_planner.js`
+- `motion_brain/motion_brain_pipeline.js`
+- `motion_brain/action_validator.js`
+- `motion_brain/action_auto_fixer.js`
+- `motion_brain/pose_feature_extractor.js`
+- `motion_brain/motion_critic.js`
+- `motion_brain/intent_fulfillment_validator.js`
+- `motion_brain/llm_adapter.js`
+- `docs/MOTION_BRAIN.md`
+- `docs/ACTION_VALIDATION.md`
+
+Commands run:
+- `Get-ChildItem -LiteralPath . -Force | Select-Object Name,Mode,Length`
+- `Get-ChildItem -LiteralPath motion_brain -Force | Select-Object Name,Length`
+- `rg -n "MotionBrain|generate_from_text|generate_motion_from_text|ActionIR|MotionCritic|PoseSampler|PoseFeatureExtractor|IntentFulfillment|PrimitiveComposer|ActionValidator|ActionAutoFixer|motion_brain" app.js motion_brain scripts\validate_demo_import.mjs docs index.html`
+- `Get-Content -LiteralPath CURRENT_STATE.md -TotalCount 120`
+- `node --check motion_brain\intent_fulfillment_validator.js`: PASS
+- `node --check app.js`: PASS
+- `node --check scripts\validate_demo_import.mjs`: PASS
+- `Get-ChildItem -LiteralPath .\motion_brain -Filter *.js | ForEach-Object { node --check $_.FullName }`: PASS
+- `npm run check`: PASS
+- `npm run validate:import`: PASS
+
+Validation result: PASS.
+
+Current blocking issue:
+- None.
+
+Next step:
+- Manual browser check: generate these prompts from the Motion Brain panel and inspect the debug preview:
+  - `向前挥出右拳`
+  - `躺下`
+  - `疲惫地推开门`
+  - `惊慌后退并撞到墙`
+  - `普通走路`
+  - `举手挥手`
+  - `随便动一下`
+
+Validation details:
+- Full validation log: `artifacts/logs/validate_motion_brain_actionir_20260511_150802.log`
+- NPM check log: `artifacts/logs/npm_check_motion_brain_actionir_20260511_150939.log`
+- Full acceptance screenshot: `artifacts/screenshots/pipeline_acceptance_20260511_070803Z.png`
+
+## Pre-IK Skeleton Edit Stage - 2026-05-11
+
+Current objective:
+- Add a pre-IK skeleton edit/save step so users can adjust the generated/imported humanoid skeleton before creating IK/FK controls, and make the Generate IK/FK page reachable again from motion editing.
+
+Current progress:
+- Started after user reported that the motion editing stage cannot click back to the Generate IK page and that skeleton adjustment must happen before IK binding.
+- Added `save_initial_skeleton` and changed skeleton creation to stay in the skeleton stage.
+- Changed the top toolbar Generate IK/FK action to navigate to the IK/FK page instead of immediately regenerating controls.
+- Added pre-IK skeleton edit controls: the skeleton stage now creates 19 temporary joint edit controls that use the same G/R/S transform workflow before final IK/FK generation.
+- Verified with targeted Playwright that pre-IK G/R/S edits move/rotate/scale a skeleton joint, save into `rest_joints`, and final IK generation replaces edit controls with full IK/FK controls.
+- Fixed skeleton-recognition viewport picking so pre-IK editing only selects real temporary controllers or transform gizmos; clicking blank viewport space clears selection instead of jumping to a nearby bone.
+- In skeleton-recognition stage, all 19 temporary joint controllers render and pick like action controllers, including hand/foot endpoints.
+- Added map axis view switching: clicking X/Y/Z while in Select mode switches the viewport to that map-axis view; keyboard X/Y/Z does the same outside an active transform. During G/R/S transforms, X/Y/Z still constrain axes.
+- Stabilized walk elbow Pole controls after torso sync so imported GLB walk templates keep both elbow poles outside the body.
+
+Files changed:
+- `CURRENT_STATE.md`
+- `app.js`
+- `index.html`
+- `scripts/validate_demo_import.mjs`
+
+Commands run:
+- `rg -n "stage|current_stage|create_ik_controls|create_humanoid_skeleton|control_rig|motion|mapping|skeleton|work-action|data-action|setStage|Runtime\\.stage|handleWorkbenchAction|createSkeleton|createIk|disabled|is-active" app.js index.html styles.css scripts\\validate_demo_import.mjs`
+- `Get-Content -Path index.html -TotalCount 180`
+- `Get-Content -Path CURRENT_STATE.md -TotalCount 120`
+- `node --check app.js`: PASS
+- `node --check scripts\validate_demo_import.mjs`: PASS
+- Targeted Playwright pre-IK skeleton controls check: PASS
+- `npm run check`: PASS
+- `npm run validate:import`: PASS
+
+Validation result: PASS.
+
+Current blocking issue:
+- None.
+
+Next step:
+- Manual browser check: hard refresh, enter skeleton recognition, select a hand/foot/head temporary controller, use G/R/S, click blank space to confirm selection clears, then save initial skeleton before generating IK/FK.
+
+Validation details:
+- Full validation log: `artifacts/logs/validate_skeleton_pick_axis_20260511_141622.log`
+- NPM check log: `artifacts/logs/npm_check_skeleton_pick_axis_20260511_141734.log`
+
+## View Axis Rotate Drag Bug - 2026-05-11
+
+Current objective:
+- Fix R/view-axis rotation so pressing R uses the current pose as the start and mouse drag applies a relative rotation around the current view axis, instead of snapping the joint/control toward the initial mouse position.
+
+Current progress:
+- Started after the user reproduced the rotate snap bug with screenshots.
+- Paused Motion Critic validation work to prioritize the latest interaction bug.
+
+Files changed:
+- `CURRENT_STATE.md`
+
+Commands run:
+- `Get-Content -Path CURRENT_STATE.md -TotalCount 80`
+- `rg -n "transformMode|transform_mode|startTransform|beginTransform|rotate|rotation|R VIEW|VIEW|transformAxis|selectTransformGizmoAxis|gizmo|mouse|pointer|drag" app.js styles.css scripts/validate_demo_import.mjs`
+- `rg -n "function setRigControlRotation|rotateJointBranchByQuaternion|applyControlToJoint|set_control_transform|set_control_transforms|selected_control|Runtime\\.transform" app.js`
+
+Validation result: Not run yet.
+
+Current blocking issue:
+- Need inspect the rotate accumulator and pointer drag code to remove the first-move snap.
+
+Next step:
+- Patch transform rotate startup/drag math and add regression coverage for R view-axis no-snap behavior.
+
+## Motion Critic Quality Gate - 2026-05-11
+
+Current objective:
+- Add an independent final-pose self-check loop after Motion Brain generation, so generated actions are solved, sampled, feature-extracted, criticized, auto-fixed, and revalidated before being accepted.
+
+Current progress:
+- Started implementation after user clarified the problem is missing global MotionCritic / Pose Quality Gate, not a single Walk_Basic parameter.
+- Reconfirmed current MotionBrain only has an abstract plan/controller validator and app-side rig validation; it does not yet critique final solved poses for human-like quality.
+- Identified app integration points:
+  - `generate_motion_from_text`
+  - `applyMotionBrainResultToRig`
+  - `createMotionBrainKeyframes`
+  - `applyPoseAtFrame`
+  - `interpolatePose`
+  - existing `buildValidationReport`
+
+Files changed:
+- `CURRENT_STATE.md`
+
+Commands run:
+- `Get-Content -Path CURRENT_STATE.md -TotalCount 120`
+- `Get-ChildItem -Path motion_brain -Filter *.js | Sort-Object Name | Select-Object Name`
+- `rg -n "generate_motion_from_text|applyMotionBrainResultToRig|createMotionBrainKeyframes|interpolatePose|applyPoseAtFrame|createMotionTemplateKeyframes|ActionAutoFixer|validator|final_passed|motion_brain|ik_fk_blend|Hand_IK|_Hand_CTRL" app.js motion_brain scripts/validate_demo_import.mjs`
+
+Validation result: Not run yet.
+
+Current blocking issue:
+- None.
+
+Next step:
+- Implement PoseSampler, PoseFeatureExtractor, MotionCritic, MotionQualityGate, critic-driven AutoFix iterations, and self-check for existing templates.
+
+## Transform Value Box Placement - 2026-05-11
+
+Current objective:
+- Move the G/R/S numeric value popup farther from the selected controller, make it draggable, and remember the last adjusted popup offset for future appearances.
+
+Current progress:
+- Increased default numeric popup offset from the controller anchor to `82px / 34px`.
+- Added drag handling on `.transform-value-box`; input and close button remain interactive.
+- Persisted the adjusted offset in `localStorage` under `action_rig_transform_value_box_offset_v1`.
+- Added debug state fields for the popup offset and drag state.
+- Added Playwright coverage for default distance and drag-persisted offset.
+
+Files changed:
+- `CURRENT_STATE.md`
+- `app.js`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+
+Commands run:
+- `node --check app.js`: PASS
+- `node --check scripts/validate_demo_import.mjs`: PASS
+- `npm run check`: PASS
+- `npm run validate:import`: PASS
+
+Validation result: PASS
+
+Current blocking issue:
+- None.
+
+Next step:
+- Final response to user with the popup placement behavior and validation result.
+
+Validation details:
+- Full validation log: `artifacts/logs/validate_transform_value_box_20260511_123357.log`
+- NPM check log: `artifacts/logs/npm_check_transform_value_box_20260511_123459.log`
+- Full acceptance screenshot: `artifacts/screenshots/pipeline_acceptance_20260511_043402Z.png`
+
+## Motion Brain Pipeline - 2026-05-11
+
+Current objective:
+- Build a global Motion Brain system that compiles natural-language action text into ActionIntent, MotionPlan, ActionPrimitives, controller keyframes, validator results, and automatic fixes.
+
+Current progress:
+- Scanned the existing app and confirmed reusable systems:
+  - `CORE_IK_CONTROL_DEFS` has Global / Root / COG / Pelvis / Chest / Head / HandIK / FootIK / Pole controls.
+  - `JOINT_CONTROL_DEFS` provides FK joint controls in hybrid mode.
+  - `MotionState.keyframes`, timeline commands, playback, loop range, motion templates, import/export, and `buildValidationReport()` already exist.
+- Started a new `motion_brain/` module set instead of rewriting the app.
+- Added ActionIntent data structure, keyword ActionIntentParser, ActionGrammar, ActionPrimitiveLibrary, and ActionPrototypeLibrary.
+- Added MotionPlanner, ControllerCurveGenerator, ActionValidator, ActionAutoFixer, LLM schema adapter, and the unified MotionBrainPipeline entry.
+- Smoke-tested `MotionBrain.generate_from_text()` with the requested Chinese sample actions using Unicode escapes; all currently return controller keyframes and pass the abstract Motion Brain validator.
+- Integrated MotionBrain into `app.js` through `generate_motion_from_text`, UI controls, debug API, JSON export/import state, and existing timeline keyframes.
+- Added docs for the pipeline, grammar, validation, auto fixing, and LLM guardrails.
+- Added Playwright validation coverage for 7 required prompts plus the fallback "翻滚闪避" primitive-composition path.
+
+Files changed:
+- `CURRENT_STATE.md`
+- `app.js`
+- `index.html`
+- `styles.css`
+- `scripts/validate_demo_import.mjs`
+- `motion_brain/action_intent.js`
+- `motion_brain/action_intent_parser.js`
+- `motion_brain/action_grammar.js`
+- `motion_brain/action_primitive_library.js`
+- `motion_brain/action_prototype_library.js`
+- `motion_brain/motion_planner.js`
+- `motion_brain/controller_curve_generator.js`
+- `motion_brain/action_validator.js`
+- `motion_brain/action_auto_fixer.js`
+- `motion_brain/llm_adapter.js`
+- `motion_brain/motion_brain_pipeline.js`
+- `docs/MOTION_BRAIN.md`
+- `docs/ACTION_GRAMMAR.md`
+- `docs/ACTION_VALIDATION.md`
+
+Commands run:
+- `Get-Content -Path CURRENT_STATE.md -TotalCount 120`
+- `rg -n "const MotionState|MOTION_TEMPLATE_DEFS|createMotionTemplateKeyframes|buildValidationReport|installDebugApi|executeCommand|apply_motion_template|motionTemplateSelect|function renderUi|export_project_json|import_project_json|isUndoableCommand|COMMAND_SCHEMAS|translateCommandName|snapshotCoreState|restoreCoreState|setRigControlPosition|setRigControlRotation" app.js index.html package.json scripts/validate_demo_import.mjs`
+- `node --check motion_brain/*.js`: PASS
+- `node --input-type=module` smoke test for 8 MotionBrain sample prompts: PASS abstract validator
+- `node --check app.js`: PASS
+- `node --check scripts/validate_demo_import.mjs`: PASS
+- `npm run check`: PASS
+- `npm run validate:import`: PASS
+
+Validation result: PASS
+
+Current blocking issue:
+- None.
+
+Next step:
+- Final response with changed files, pipeline flow, supported action types, invocation, validator/autofixer behavior, and LLM integration path.
+
+Validation details:
+- Full validation log: `artifacts/logs/validate_motion_brain_20260511_122743.log`
+- NPM check log: `artifacts/logs/npm_check_motion_brain_20260511_122845.log`
+- Full acceptance screenshot: `artifacts/screenshots/pipeline_acceptance_20260511_042746Z.png`
+
+## ZBrush Style Transform Gizmo - 2026-05-11
+
+Current objective:
+- Replace the cluttered same-looking G/R/S controller display with a usable ZBrush-inspired universal transform gizmo.
+
+Current progress:
+- Started investigation after user feedback that controllers pile together and G/R/S feel indistinguishable.
+- Researched Maxon ZBrush references:
+  - Gizmo 3D is a compact universal manipulator for move, scale, and rotate.
+  - Move uses red/green/blue axis arrows plus screen-plane movement.
+  - Scale uses red/green/blue axis rectangles and a center yellow square for uniform scale.
+  - Rotate uses red/green/blue axis circles plus a grey screen-plane circle.
+  - TransPose uses an action line for move/scale/rotate and is separate from Gizmo 3D.
+- Reworked `renderZBrushTransformGizmo()` into mode-specific rendering:
+  - Select: only a light pivot marker.
+  - Move/G: screen-plane handle plus X/Y/Z arrows.
+  - Rotate/R: X/Y/Z rings plus a view-plane ring.
+  - Scale/S: uniform center box plus X/Y/Z scale boxes.
+- Increased gizmo screen size so it reads as a transform manipulator instead of another tiny skeleton control.
+- Made `COG_CTRL` scalable so the common center control can actually show/use S mode.
+- Scale now respects axis selection: free scale is uniform, while X/Y/Z scale handles adjust only that component and deform the skeleton branch through a directional scale basis.
+- Reduced FK control pile-up by only showing main FK joints by default; overlapping hand/foot/toe FK controls remain available through selection and appear when selected.
+- Added `getTransformGizmoDebug()` and validation coverage to assert G/R/S do not all expose the same handle set.
+
+Files changed:
+- `CURRENT_STATE.md`
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+
+Commands run:
+- Web search/open of Maxon ZBrush Gizmo 3D and TransPose documentation.
+- `Get-Content -LiteralPath CURRENT_STATE.md -Encoding UTF8 -TotalCount 80`
+- `rg -n "transformGizmo|gizmo|TransformGizmo|renderTransform|createTransform|Runtime\\.transform|transformAxis|selectTransformGizmoAxis|makeLabel|addControlArrow|arrow|RingGeometry|ConeGeometry|BoxGeometry|axis" app.js styles.css index.html`
+- `rg -n "function renderAll|function renderScene|function render.*Gizmo|function build.*Gizmo|transform_gizmo|gizmoGroup|transform" app.js`
+- `node --check app.js`: PASS
+- `node --check scripts\validate_demo_import.mjs`: PASS
+- `npm run check`: PASS
+- `npm run validate:import`: PASS
+
+Validation result: PASS
+
+Current blocking issue:
+- None.
+
+Next step:
+- Final response to user with the concrete control/gizmo fixes and validation details.
+
+Validation details:
+- Full validation log: `artifacts/logs/validate_zbrush_gizmo_20260511_115337.log`
+- Full acceptance screenshot: `artifacts/screenshots/pipeline_acceptance_20260511_035339Z.png`
+
+## FK IK Hybrid Controls - 2026-05-11
+
+Current objective:
+- Make the advertised IK/FK hybrid controller feel real: FK controls should be visible in hybrid mode and rotating them should rotate skeleton branches.
+
+Current progress:
+- Started investigation. Existing hybrid mode exposes IK controls, but FK joint controls are hidden behind a debug toggle and several rotate paths explicitly skip joint controls.
+- Patched hybrid mode so FK bone controls are shown by default.
+- Renamed the visible Joint Debug control surface to FK bone controls in the UI.
+- Allowed FK joint controls through command, keyboard, and numeric rotate paths.
+- FK joint rotation now applies the rotation delta to the target joint branch; terminal FK joints also store explicit orientation.
+- Added validation coverage for visible FK controls, upper-arm FK branch rotation, bone-length preservation, IK endpoint resync, and terminal wrist FK rotation.
+- Updated README and handoff wording from IK-only controls to IK/FK controls where relevant.
+
+Files changed:
+- `CURRENT_STATE.md`
+- `app.js`
+- `index.html`
+- `scripts/validate_demo_import.mjs`
+- `README.md`
+- `HANDOFF.md`
+
+Commands run:
+- `Get-Content -LiteralPath CURRENT_STATE.md -TotalCount 220`
+- `rg -n "CONTROL_SOLVE_MODES|JOINT_CONTROL_DEFS|showJointDebugControls|joint_debug_controls|is_joint_control|set_control_transform|set_control_transforms|getSelectedTransformControls|applyControlToJoint|rotateJointBranchByQuaternion|IK/FK|Joint Debug|IK 控制器|控制逻辑" app.js index.html scripts/validate_demo_import.mjs styles.css`
+- `node --check app.js`: PASS
+- `node --check scripts\validate_demo_import.mjs`: PASS
+- `npm run check`: PASS
+- `npm run validate:import`: PASS
+
+Validation result: PASS
+
+Current blocking issue:
+- None.
+
+Next step:
+- Final response to user with FK/IK behavior summary and validation details.
+
+Validation details:
+- Full validation log: `artifacts/logs/validate_fk_controls_20260511_112121.log`
+- Full acceptance screenshot: `artifacts/screenshots/pipeline_acceptance_20260511_032123Z.png`
+
+## Timeline Labels And Common Motion Templates - 2026-05-11
+
+Current objective:
+- Clarify the timeline visible-window controls that were hard to understand.
+- Add more common humanoid action templates using common game animation sets as reference.
+
+Current progress:
+- Researched common character animation sets online. References point to a basic locomotion set of Idle / Walk / Run, with Jump and posture/action clips such as Crouch and Attack/Punch as common next templates.
+- Updated timeline control labels from ambiguous icon-only controls to clearer visible-frame wording:
+  - `窗口` -> `可见帧`
+  - `固定` -> `视图已固定`
+  - `< / - / + / >` -> `左移 / 缩小 / 放大 / 右移`
+- Added a motion template selector in the motion panel.
+- Added common procedural humanoid templates:
+  - `idle_breathe_24f`
+  - `walk_cycle_8f`
+  - `run_cycle_8f`
+  - `jump_in_place_16f`
+  - `crouch_16f`
+  - `punch_right_12f`
+- Reworked template creation through `createMotionTemplateKeyframes(templateId)`.
+- Updated timeline key-pose rendering to show the active template's keyframes instead of hard-coding Walk_8F.
+- Added validation coverage for the template selector and each new template's keyed frame count/loop range.
+
+Files changed:
+- `index.html`
+- `styles.css`
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `README.md`
+- `HANDOFF.md`
+- `CURRENT_STATE.md`
+
+Commands run:
+- Online research through web search.
+- `npm run check`: PASS
+- `node --check scripts\validate_demo_import.mjs`: PASS
+- `npm run validate:import`: PASS
+- Playwright visual screenshot check: PASS
+
+Validation result: PASS
+
+Current blocking issue:
+- None.
+
+Next step:
+- Final response to user with a concise explanation of the clarified controls, added templates, and verification results.
+
+Validation details:
+- Full acceptance screenshot: `artifacts/screenshots/pipeline_acceptance_20260511_030339Z.png`
+- Template UI screenshot: `artifacts/screenshots/templates_ui_20260511_110431.png`
+
+## Timeline Clip Loop Editing - 2026-05-11
+
+Current objective:
+- Make the timeline behave more like a video editor: wheel zooms the visible timeline length, selected frame ranges can be dragged as clips with an insertion cursor, loop playback uses a draggable range bar, and playback speed is adjustable from the timeline.
+
+Current progress:
+- Added timeline playback speed state and a timeline speed slider.
+- Added `loop_range` state and a loop range bar above the frame ruler with draggable start/end/body handles.
+- Updated playback so loop mode uses the selected loop range instead of always looping across all frames.
+- Expanded the visible timeline zoom limit from 240 to 960 frames.
+- Reworked frame selection so Shift-click selects a continuous frame segment and Ctrl-click toggles frames.
+- Added selected-range drag support for keyframed timeline segments, including a live insertion cursor and a `move_timeline_range` command.
+- Updated Motion JSON export/import to preserve `playback_speed`, `loop_enabled`, and `loop_range`.
+- Added automated validation coverage for the speed slider, loop range handle drag, loop toggle, insertion cursor, and clip-like keyframe segment movement.
+
+Files changed:
+- `index.html`
+- `styles.css`
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Commands run:
+- `npm run check`: PASS
+- `node --check scripts\validate_demo_import.mjs`: PASS
+- `npm run validate:import`: PASS
+- Playwright visual screenshot check: PASS
+
+Validation result: PASS
+
+Current blocking issue:
+- None.
+
+Next step:
+- Final response to the user with changed files and verification summary.
+
+Validation details:
+- Full acceptance screenshot: `artifacts/screenshots/pipeline_acceptance_20260511_023817Z.png`
+- Timeline layout screenshot: `artifacts/screenshots/timeline_visual_20260511_104320.png`
+- Timeline insertion cursor screenshot: `artifacts/screenshots/timeline_drag_cursor_20260511_104400.png`
+
 ## Handoff And Git Upload Prep - 2026-05-11
 
 Current objective:
@@ -4338,3 +4967,109 @@ Next step:
 - Start `start_demo.bat` or run `python -m http.server 8780` from this folder.
 - Open `http://localhost:8780/index.html`.
 - Browser-verify layout and 3D canvas, then continue feature work only inside `E:\codex骨骼软件`.
+
+## Rotate And Control Length Regression - 2026-05-11
+
+Current objective:
+- Fix latest regression where pressing R makes wrist/limb fly and previously allowed controller/bone length adjustment appears to be constrained again.
+
+Current progress:
+- User interrupted with screenshots showing R VIEW rotation causing a hand/wrist chain to explode and leg/controller length behaving like the old no-stretch state.
+- Pausing template UI/self-check work to debug transform and IK solve path first.
+
+Files changed before this interruption:
+- app.js
+- scripts/validate_demo_import.mjs
+
+Validation result:
+- Static checks passed.
+- Full validate:import currently failing on saved initial skeleton persistence before reaching this latest regression.
+
+Next step:
+- Inspect modal rotate and applyControlToJoint/syncIkControlsToJoints paths, then add regression coverage for R no-fly and scale/length behavior.
+
+## Rotate And Saved Initial Skeleton Fix - 2026-05-11
+
+Current objective:
+- Fix the latest R-view rotation / wrist-flying regression without removing the pre-IK ability to lengthen and adjust skeleton bones.
+
+Current progress:
+- Diagnosed the real cause with a targeted Playwright trace:
+  - After clicking "save initial skeleton", dragging a temporary pre-IK skeleton edit control still auto-wrote the draft into `skeleton.rest_joints`.
+  - Generate IK/FK then used that unsaved draft as the rest baseline, so `R_Hand_IK` entered motion editing at a stretched position around x=2.09 instead of the saved initial x=0.82.
+  - R rotation was then rotating a rig whose saved baseline had already been polluted, which looked like wrist flying and long controller lines.
+- Fixed the state split:
+  - `initial_rest_joints` is now the authoritative saved initial skeleton once the user clicks Save.
+  - Post-save pre-IK edits are marked as `initial_skeleton_dirty` draft changes and do not become the IK/FK baseline unless the user clicks Save again.
+  - Entering/generating IK/FK resets `joints` and `rest_joints` to the saved initial skeleton and clears the dirty flag.
+  - `restoreCoreState()` and keyboard transform startup now resync hand/foot IK end-effectors to solved joints, preventing stale long-line targets from surviving undo/stage transitions.
+- Kept the intended behavior:
+  - Skeleton recognition stage still allows length changes with skeleton edit controls.
+  - Animation/IK stage still uses no-stretch solved hand/foot targets unless the skeleton was explicitly saved with new lengths.
+- Updated validation coverage:
+  - Added a check that post-save pre-IK draft edits do not overwrite `initial_rest_joints`.
+  - Added a check that IK/FK generation ignores unsaved post-save draft edits.
+  - Adjusted multi-select hand IK translation validation to use a reachable direction while still checking that hand IK controls remain attached to the solved wrists.
+
+Files changed:
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Validation result: PASS.
+
+Commands run:
+- `node --check app.js`: PASS
+- `node --check scripts\validate_demo_import.mjs`: PASS
+- `npm run check`: PASS
+- `npm run validate:import`: PASS
+
+Validation details:
+- Full validation log: `artifacts/logs/validate_rotate_length_20260511_b.log`
+- NPM check log: `artifacts/logs/npm_check_rotate_length_20260511_b.log`
+- Full acceptance screenshot: `artifacts/screenshots/pipeline_acceptance_20260511_110954Z.png`
+
+Next step:
+- Hard refresh `http://localhost:8780/index.html`.
+- Manual check:
+  - In skeleton recognition, drag/scale a temporary bone control before saving, click Save Initial Skeleton, then Generate IK/FK.
+  - In motion editing, select a wrist/forearm control and press R. The hand IK line should stay attached and the wrist should rotate from the current pose without snapping or flying.
+
+## Handoff And Git Publish - 2026-05-11
+
+Current objective:
+- Create a clean handoff document and publish the current project state to Git.
+
+Current progress:
+- Rewrote `HANDOFF.md` with the current workspace, run commands, validation commands, Motion Brain architecture, latest R/initial-skeleton fix, known limitations, and next steps.
+- Confirmed `E:\codex骨骼软件` is not itself a Git repository.
+- Found the adjacent publishing repository at `E:\codex骨骼软件_github_publish`.
+- Publishing repository details:
+  - branch: `main`
+  - remote: `origin https://github.com/Siger1989/gugebangdign.git`
+- Synced source files from `E:\codex骨骼软件` to the publishing repository, excluding `.git`, `node_modules`, `artifacts`, backups, logs, and release output.
+
+Files changed:
+- `HANDOFF.md`
+- `CURRENT_STATE.md`
+- Project source files already listed in the previous sections.
+
+Validation result:
+- Handoff updated.
+- Source validation before publishing:
+  - `node --check app.js`: PASS
+  - `node --check scripts\validate_demo_import.mjs`: PASS
+  - `npm run check`: PASS
+  - `npm run validate:import`: PASS
+
+Current blocking issue:
+- GitHub upload is blocked by authentication for the HTTPS remote.
+- `git push origin main` failed with:
+  - `remote: Invalid username or token. Password authentication is not supported for Git operations.`
+- `gh` is not installed on this machine, so the GitHub CLI fallback is unavailable.
+
+Next step:
+- Local commit exists in `E:\codex骨骼软件_github_publish`:
+  - `ecd52e8 Add motion brain pipeline and rig workflow fixes`
+- To finish upload, authenticate Git for `https://github.com/Siger1989/gugebangdign.git` with a GitHub token, install/login `gh`, or switch the remote to an SSH URL with a valid key, then run `git push origin main`.
+

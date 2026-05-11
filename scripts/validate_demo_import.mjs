@@ -44,15 +44,73 @@ try {
     paste: true,
   });
   await clickAndExpect("#createSkeletonButton", "create_humanoid_skeleton", (state) => (
-    state.skeleton === "Humanoid_v1" && state.joints === 19 && state.bones === 18
+    state.skeleton === "Humanoid_v1"
+    && state.joints === 19
+    && state.bones === 18
+    && state.current_stage === "skeleton"
+    && state.editable_assignment_skeleton === true
+    && state.joint_controls === 19
+    && state.ik_controls === 0
   ));
+  const preIkSkeleton = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const headBeforeInitialSave = getJointPosition(preIkSkeleton, "Head");
+  const headInitialTarget = [headBeforeInitialSave[0], headBeforeInitialSave[1] + 0.018, headBeforeInitialSave[2]];
+  await executeCommandAndExpect("set_joint_position", {
+    joint: "Head",
+    position: headInitialTarget,
+  }, (state) => state.current_stage === "skeleton");
+  await executeCommandAndExpect("save_initial_skeleton", {}, (state) => (
+    state.initial_skeleton_saved === true
+    && state.current_stage === "skeleton"
+  ));
+  const savedInitialState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const savedInitialRightHand = savedInitialState.skeleton?.initial_rest_joints?.find((joint) => joint.name === "R_Hand")?.position
+    || getJointPosition(savedInitialState, "R_Hand");
+  record("pre-IK skeleton edits save into initial rest pose", (
+    vecDistance(
+      savedInitialState.skeleton?.rest_joints?.find((joint) => joint.name === "Head")?.position || [0, 0, 0],
+      headInitialTarget,
+    ) < 0.001
+  ), {
+    headInitialTarget,
+    savedHead: savedInitialState.skeleton?.rest_joints?.find((joint) => joint.name === "Head")?.position,
+  });
+  await validatePreIkSkeletonViewportSelection();
+  await validateMapAxisViewSwitching();
+  await clickAndExpect("#toolbarCreateIkButton", "set_stage", (state) => state.current_stage === "control_rig");
   await clickAndExpect("#createIkButton", "create_ik_controls", (state) => (
     state.ik_controls === 14
-    && state.visible_joint_debug_controls === false
+    && state.visible_joint_debug_controls === true
     && state.control_ids.includes("COG_CTRL")
     && state.control_ids.includes("Pelvis_CTRL")
     && state.control_ids.includes("Chest_CTRL")
   ));
+  const afterInitialIkState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  record("creating IK/FK preserves the saved custom initial skeleton", (
+    vecDistance(
+      afterInitialIkState.skeleton?.rest_joints?.find((joint) => joint.name === "Head")?.position || [0, 0, 0],
+      headInitialTarget,
+    ) < 0.001
+    && vecDistance(getJointPosition(afterInitialIkState, "Head"), headInitialTarget) < 0.001
+  ), {
+    headInitialTarget,
+    restHead: afterInitialIkState.skeleton?.rest_joints?.find((joint) => joint.name === "Head")?.position,
+    currentHead: getJointPosition(afterInitialIkState, "Head"),
+    currentRightHand: getJointPosition(afterInitialIkState, "R_Hand"),
+    savedInitialRightHand,
+  });
+  record("creating IK/FK ignores unsaved post-save skeleton draft edits", (
+    vecDistance(getJointPosition(afterInitialIkState, "R_Hand"), savedInitialRightHand) < 0.001
+  ), {
+    savedInitialRightHand,
+    currentRightHand: getJointPosition(afterInitialIkState, "R_Hand"),
+  });
+  await clickAndExpect("#toolbarCreateIkButton", "set_stage", (state) => state.current_stage === "control_rig");
+  const ikPanelCreateButtonVisible = await page.locator("#createIkButton").isVisible();
+  record("motion stage toolbar opens IK/FK page without regenerating controls", ikPanelCreateButtonVisible, { ikPanelCreateButtonVisible });
+  await clickAndExpect("#toolbarMotionButton", "set_stage", (state) => state.current_stage === "motion");
+  await validateFkJointControlRotation();
+  await validateZBrushTransformGizmoModes();
   await validateControlMultiSelectAndTimelineExpansion();
   const beforePelvisDrop = await page.evaluate(() => window.__motionDebug.getMotionState());
   const pelvisDropControl = beforePelvisDrop.ik_controls.find((control) => control.id === "Pelvis_CTRL");
@@ -95,6 +153,26 @@ try {
     controlY: clampedRightFootControl.position[1],
     footY: getJointY(afterFootGroundClamp, "R_Foot"),
     controlFootDelta: controlJointDistance(afterFootGroundClamp, "R_Foot_IK"),
+  });
+  await executeCommandAndExpect("undo", {}, (state) => state.redo_stack >= 1);
+  const beforeFootReachClamp = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const rightFootReachIk = beforeFootReachClamp.ik_controls.find((control) => control.id === "R_Foot_IK");
+  const unreachableFootTarget = [rightFootReachIk.position[0] + 5, rightFootReachIk.position[1], rightFootReachIk.position[2]];
+  await executeCommandAndExpect("set_control_transform", {
+    control_id: "R_Foot_IK",
+    transform_mode: "translate",
+    space: "global",
+    position: unreachableFootTarget,
+  }, (state) => state.selected_control === "R_Foot_IK");
+  const afterFootReachClamp = await page.evaluate(() => window.__motionDebug.getMotionState());
+  record("unreachable foot IK target clamps back to solved foot instead of leaving a long control line", (
+    controlJointDistance(afterFootReachClamp, "R_Foot_IK") < 0.001
+    && vecDistance(unreachableFootTarget, getControlPosition(afterFootReachClamp, "R_Foot_IK")) > 1
+  ), {
+    requested: unreachableFootTarget,
+    control: getControlPosition(afterFootReachClamp, "R_Foot_IK"),
+    foot: getJointPosition(afterFootReachClamp, "R_Foot"),
+    controlFootDelta: controlJointDistance(afterFootReachClamp, "R_Foot_IK"),
   });
   await executeCommandAndExpect("undo", {}, (state) => state.redo_stack >= 1);
   await executeCommandAndExpect("select_control", { control: "COG_CTRL" }, (state) => state.selected_control === "COG_CTRL");
@@ -147,6 +225,21 @@ try {
     footDelta: jointPositionDelta(beforeChestControl, afterChestControl, "R_Foot"),
   });
   await validateWalkArmSolveModesMatchBasic();
+  await clickAndExpect("#applyWalkButton", "apply_motion_template", (state) => state.keyframes === 8);
+  const afterFirstTemplateState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  record("loading an action template keeps the saved initial skeleton as rest pose", (
+    vecDistance(
+      afterFirstTemplateState.skeleton?.rest_joints?.find((joint) => joint.name === "Head")?.position || [0, 0, 0],
+      headInitialTarget,
+    ) < 0.001
+  ), {
+    headInitialTarget,
+    restHead: afterFirstTemplateState.skeleton?.rest_joints?.find((joint) => joint.name === "Head")?.position,
+  });
+  await validateTimelineLoopSpeedAndRangeDrag();
+  await validateMotionTemplateLibrary();
+  await validateMotionBrainPipeline();
+  await page.locator("#motionTemplateSelect").selectOption("walk_cycle_8f");
   await clickAndExpect("#applyWalkButton", "apply_motion_template", (state) => state.keyframes === 8);
   await validateCurrentFrameCopyPasteAndMirror();
   await clickAndExpect("#applyWalkButton", "apply_motion_template", (state) => state.keyframes === 8);
@@ -355,6 +448,98 @@ async function pressKeyAndExpect(key, commandName, predicate) {
   record(`${key} ${commandName} state expectation`, Boolean(predicate(state)), state);
 }
 
+async function validatePreIkSkeletonViewportSelection() {
+  await executeCommandAndExpect("select_control", { control: "L_Hand_CTRL" }, (state) => (
+    state.current_stage === "skeleton"
+    && state.selected_control === "L_Hand_CTRL"
+  ));
+  const canvasBox = await page.locator("#rigCanvas").boundingBox();
+  const beforeBlankCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.mouse.click(canvasBox.x + 28, canvasBox.y + 72);
+  await page.waitForFunction((count) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => entry.name === "clear_selection");
+  }, beforeBlankCount, { timeout: 10000 });
+  const cleared = await getSummary();
+  record("pre-IK skeleton blank viewport click clears selection", (
+    cleared.current_stage === "skeleton"
+    && cleared.selected_control === null
+    && cleared.selected_bone === null
+  ), cleared);
+
+  const target = await page.evaluate(() => (
+    window.__motionDebug.getIkControlScreenPositions().find((item) => item.id === "R_Hand_CTRL" && item.visible)
+  ));
+  record("pre-IK skeleton hand edit control is visible for picking", Boolean(target), target);
+  if (!target) {
+    return;
+  }
+  const beforeDrag = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const beforeCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.mouse.move(target.x, target.y);
+  await page.mouse.down();
+  await page.mouse.move(target.x + 34, target.y + 8, { steps: 5 });
+  await page.mouse.up();
+  await page.waitForFunction((count) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => entry.name === "set_control_transform");
+  }, beforeCount, { timeout: 10000 });
+  const afterDrag = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const beforeControl = beforeDrag.ik_controls.find((control) => control.id === "R_Hand_CTRL");
+  const afterControl = afterDrag.ik_controls.find((control) => control.id === "R_Hand_CTRL");
+  const beforeInitialRightHand = beforeDrag.skeleton?.initial_rest_joints?.find((joint) => joint.name === "R_Hand")?.position;
+  const afterInitialRightHand = afterDrag.skeleton?.initial_rest_joints?.find((joint) => joint.name === "R_Hand")?.position;
+  record("pre-IK skeleton control drag keeps the picked controller selected", (
+    afterDrag.selected_control === "R_Hand_CTRL"
+    && afterDrag.selected_bone === "R_Hand"
+    && vecDistance(beforeControl?.position || [0, 0, 0], afterControl?.position || [0, 0, 0]) > 0.001
+  ), {
+    selected_control: afterDrag.selected_control,
+    selected_bone: afterDrag.selected_bone,
+    before: beforeControl?.position,
+    after: afterControl?.position,
+  });
+  record("pre-IK post-save draft edit does not overwrite saved initial skeleton", (
+    beforeInitialRightHand
+    && afterInitialRightHand
+    && vecDistance(beforeInitialRightHand, afterInitialRightHand) < 0.001
+    && afterDrag.skeleton?.initial_skeleton_dirty === true
+  ), {
+    beforeInitialRightHand,
+    afterInitialRightHand,
+    draftRightHand: afterDrag.skeleton?.rest_joints?.find((joint) => joint.name === "R_Hand")?.position,
+    dirty: afterDrag.skeleton?.initial_skeleton_dirty,
+  });
+}
+
+async function validateMapAxisViewSwitching() {
+  await page.locator('[data-tool="select"]').click();
+  const beforeButtonCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.locator('.axis-button[data-axis="z"]').click();
+  await page.waitForFunction((count) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => entry.name === "set_view_axis");
+  }, beforeButtonCount, { timeout: 10000 });
+  const zCamera = await page.evaluate(() => window.__motionDebug.getCameraState());
+  record("toolbar Z switches the viewport to map Z view", (
+    Math.abs(zCamera.yaw) < 0.001
+    && Math.abs(zCamera.pitch) < 0.001
+  ), zCamera);
+
+  const beforeKeyCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.locator("#rigCanvas").focus();
+  await page.keyboard.press("x");
+  await page.waitForFunction((count) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => entry.name === "set_view_axis");
+  }, beforeKeyCount, { timeout: 10000 });
+  const xCamera = await page.evaluate(() => window.__motionDebug.getCameraState());
+  record("keyboard X switches the viewport to map X view", (
+    Math.abs(xCamera.yaw - Math.PI / 2) < 0.001
+    && Math.abs(xCamera.pitch) < 0.001
+  ), xCamera);
+}
+
 async function setTimelineFrameInputAndExpect(frame) {
   const beforeCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
   await page.locator("#timelineFrameNumberInput").fill(String(frame));
@@ -405,8 +590,17 @@ async function keyboardRotateSelectedControlAndExpect(controlId, focusSelector =
   const beforeCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
   await page.mouse.move(control.x + 70, control.y);
   await page.locator(focusSelector).focus();
+  const beforeRotateState = await page.evaluate(() => window.__motionDebug.getMotionState());
   await page.keyboard.press("r");
-  await page.mouse.move(control.x + 114, control.y + 82, { steps: 10 });
+  await page.mouse.move(control.x + 114, control.y + 82, { steps: 1 });
+  const afterFirstMoveState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  record("R view first pointer move does not snap to cursor direction", (
+    distancePlainVec(getControlRotation(beforeRotateState, controlId), getControlRotation(afterFirstMoveState, controlId)) < 0.001
+  ), {
+    before: getControlRotation(beforeRotateState, controlId),
+    after: getControlRotation(afterFirstMoveState, controlId),
+  });
+  await page.mouse.move(control.x + 148, control.y + 96, { steps: 10 });
   await page.mouse.down();
   await page.mouse.up();
   await page.waitForFunction(({ count }) => {
@@ -459,8 +653,8 @@ async function validateControlMultiSelectAndTimelineExpansion() {
     transform_mode: "translate",
     space: "global",
     transforms: [
-      { control_id: "R_Hand_IK", position: [rightHand.position[0] + 0.035, rightHand.position[1], rightHand.position[2]] },
-      { control_id: "L_Hand_IK", position: [leftHand.position[0] + 0.035, leftHand.position[1], leftHand.position[2]] },
+      { control_id: "R_Hand_IK", position: [rightHand.position[0], rightHand.position[1] + 0.02, rightHand.position[2]] },
+      { control_id: "L_Hand_IK", position: [leftHand.position[0], leftHand.position[1] + 0.02, leftHand.position[2]] },
     ],
   }, (state) => (
     state.selected_control_count === 2
@@ -468,12 +662,21 @@ async function validateControlMultiSelectAndTimelineExpansion() {
     && state.selected_controls.includes("L_Hand_IK")
   ));
   const moved = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const rightDelta = getControlPosition(moved, "R_Hand_IK").map((value, index) => value - rightHand.position[index]);
+  const leftDelta = getControlPosition(moved, "L_Hand_IK").map((value, index) => value - leftHand.position[index]);
   record("multi-selected controls move as a group", (
-    Math.abs(getControlPosition(moved, "R_Hand_IK")[0] - (rightHand.position[0] + 0.035)) < 0.002
-    && Math.abs(getControlPosition(moved, "L_Hand_IK")[0] - (leftHand.position[0] + 0.035)) < 0.002
+    rightDelta[1] > 0.015
+    && leftDelta[1] > 0.015
+    && distancePlainVec(rightDelta, leftDelta) < 0.01
+    && controlJointDistance(moved, "R_Hand_IK") < 0.001
+    && controlJointDistance(moved, "L_Hand_IK") < 0.001
   ), {
     right: getControlPosition(moved, "R_Hand_IK"),
     left: getControlPosition(moved, "L_Hand_IK"),
+    rightDelta,
+    leftDelta,
+    rightAttachDelta: controlJointDistance(moved, "R_Hand_IK"),
+    leftAttachDelta: controlJointDistance(moved, "L_Hand_IK"),
   });
   const beforeHandRotate = await page.evaluate(() => window.__motionDebug.getMotionState());
   await executeCommandAndExpect("set_control_transforms", {
@@ -535,6 +738,26 @@ async function validateControlMultiSelectAndTimelineExpansion() {
       && Math.abs(Number(openValueBoxState.input_value) - 0.025) < 0.001
       && openValueBoxState.control_ids.includes("COG_CTRL")
     ), openValueBoxState);
+    record("transform numeric box defaults farther from control", (
+      openValueBoxState.offset?.x >= 70
+      && openValueBoxState.offset?.y >= 28
+    ), openValueBoxState);
+    const valueBoxLabel = await page.locator(".transform-value-box.is-visible .transform-value-label").boundingBox();
+    if (valueBoxLabel) {
+      await page.mouse.move(valueBoxLabel.x + valueBoxLabel.width / 2, valueBoxLabel.y + valueBoxLabel.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(valueBoxLabel.x + valueBoxLabel.width / 2 + 38, valueBoxLabel.y + valueBoxLabel.height / 2 + 22, { steps: 5 });
+      await page.mouse.up();
+      const draggedValueBoxState = await page.evaluate(() => window.__motionDebug.getTransformValueBoxState());
+      record("transform numeric box drag stores future offset", (
+        draggedValueBoxState.visible === true
+        && draggedValueBoxState.offset?.x > openValueBoxState.offset.x + 20
+        && draggedValueBoxState.offset?.y > openValueBoxState.offset.y + 10
+      ), {
+        before: openValueBoxState,
+        after: draggedValueBoxState,
+      });
+    }
     const selectionBeforeClose = await getSummary();
     await page.locator(".transform-value-box.is-visible .transform-value-close").click();
     const closedValueBox = await page.locator(".transform-value-box.is-visible .transform-value-input").count();
@@ -685,7 +908,7 @@ async function validateControlMultiSelectAndTimelineExpansion() {
     timelineViewAfterButtonZoom.frames < timelineViewAfterReset.frames
     && timelineViewAfterButtonZoom.pinned
     && timelineViewAfterButtonZoom.pinned_badge_visible
-    && timelineViewAfterButtonZoom.pinned_badge_text === "固定"
+    && timelineViewAfterButtonZoom.pinned_badge_text === "视图已固定"
     && timelineViewAfterButtonZoom.zoom_out_available
     && timelineViewAfterButtonPan.start > timelineViewAfterButtonZoom.start
     && timelineViewAfterButtonPan.pinned
@@ -751,6 +974,583 @@ async function activateTimelineViewButtonAndWait(selector, commandName, key = "E
   }, { count: beforeCount, name: commandName }, { timeout: 10000 });
 }
 
+async function validateFkJointControlRotation() {
+  const before = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const beforeSummary = await getSummary();
+  const fkControl = before.ik_controls.find((control) => control.id === "R_UpperArm_CTRL");
+  record("hybrid mode exposes FK joint controls", (
+    Boolean(fkControl?.is_joint_control)
+    && beforeSummary.visible_joint_debug_controls === true
+  ), {
+    fkControl: fkControl ? { id: fkControl.id, role: fkControl.control_role, position: fkControl.position } : null,
+    visible: beforeSummary.visible_joint_debug_controls,
+  });
+
+  await executeCommandAndExpect("set_control_transform", {
+    control_id: "R_UpperArm_CTRL",
+    transform_mode: "rotate",
+    space: "global",
+    rotation: [0, 0, 0.35],
+  }, (state) => state.selected_control === "R_UpperArm_CTRL");
+  const after = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const beforeUpperLen = vecDistance(getJointPosition(before, "R_UpperArm"), getJointPosition(before, "R_Forearm"));
+  const afterUpperLen = vecDistance(getJointPosition(after, "R_UpperArm"), getJointPosition(after, "R_Forearm"));
+  const beforeForearmLen = vecDistance(getJointPosition(before, "R_Forearm"), getJointPosition(before, "R_Hand"));
+  const afterForearmLen = vecDistance(getJointPosition(after, "R_Forearm"), getJointPosition(after, "R_Hand"));
+  record("FK upper arm rotation moves child branch without stretching bones", (
+    jointPositionDelta(before, after, "R_UpperArm") < 0.001
+    && jointPositionDelta(before, after, "R_Forearm") > 0.005
+    && jointPositionDelta(before, after, "R_Hand") > 0.01
+    && Math.abs(afterUpperLen - beforeUpperLen) < 0.001
+    && Math.abs(afterForearmLen - beforeForearmLen) < 0.001
+    && Math.abs(getControlRotation(after, "R_UpperArm_CTRL")[2] - 0.35) < 0.001
+    && controlJointDistance(after, "R_UpperArm_CTRL") < 0.001
+    && controlJointDistance(after, "R_Hand_IK") < 0.001
+  ), {
+    forearmDelta: jointPositionDelta(before, after, "R_Forearm"),
+    handDelta: jointPositionDelta(before, after, "R_Hand"),
+    upperLenDelta: afterUpperLen - beforeUpperLen,
+    forearmLenDelta: afterForearmLen - beforeForearmLen,
+    fkRotation: getControlRotation(after, "R_UpperArm_CTRL"),
+    upperCtrlDelta: controlJointDistance(after, "R_UpperArm_CTRL"),
+    handIkDelta: controlJointDistance(after, "R_Hand_IK"),
+  });
+  await executeCommandAndExpect("undo", {}, (state) => state.redo_stack >= 1);
+
+  await executeCommandAndExpect("set_control_transform", {
+    control_id: "R_Hand_CTRL",
+    transform_mode: "rotate",
+    space: "global",
+    rotation: [0.25, 0, 0],
+  }, (state) => (
+    state.selected_control === "R_Hand_CTRL"
+    && state.joint_rotation_overrides >= 1
+  ));
+  const afterWrist = await page.evaluate(() => window.__motionDebug.getMotionState());
+  record("FK terminal joint rotation stores wrist orientation", (
+    Math.abs(getControlRotation(afterWrist, "R_Hand_CTRL")[0] - 0.25) < 0.001
+    && Boolean(afterWrist.joint_rotations?.R_Hand)
+  ), {
+    fkRotation: getControlRotation(afterWrist, "R_Hand_CTRL"),
+    wristRotation: afterWrist.joint_rotations?.R_Hand,
+  });
+  await executeCommandAndExpect("undo", {}, (state) => state.redo_stack >= 1);
+
+  await executeCommandAndExpect("select_control", { control: "R_Forearm_CTRL" }, (state) => state.selected_control === "R_Forearm_CTRL");
+  await executeCommandAndExpect("select_control", { control: "R_Hand_IK", additive: true }, (state) => (
+    state.selected_controls.includes("R_Forearm_CTRL") && state.selected_controls.includes("R_Hand_IK")
+  ));
+  const beforeNestedRotate = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const handIkScreen = await page.evaluate(() => (
+    window.__motionDebug.getIkControlScreenPositions().find((item) => item.id === "R_Hand_IK" && item.visible)
+  ));
+  record("nested rotate regression control visible", Boolean(handIkScreen), handIkScreen);
+  if (handIkScreen) {
+    const beforeRotateCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+    await page.mouse.move(handIkScreen.x + 80, handIkScreen.y);
+    await page.locator("#rigCanvas").focus();
+    await page.keyboard.press("r");
+    await page.mouse.move(handIkScreen.x + 130, handIkScreen.y + 80, { steps: 1 });
+    const afterFirstNestedMove = await page.evaluate(() => window.__motionDebug.getMotionState());
+    await page.mouse.move(handIkScreen.x + 160, handIkScreen.y + 90, { steps: 8 });
+    await page.mouse.down();
+    await page.mouse.up();
+    await page.waitForFunction(({ count }) => {
+      const log = window.__motionDebug?.getCommandLog?.() || [];
+      return log.slice(count).some((entry) => (
+        (entry.name === "set_control_transform" || entry.name === "set_control_transforms")
+        && entry.status === "success"
+        && entry.args?.transform_mode === "rotate"
+      ));
+    }, { count: beforeRotateCount }, { timeout: 10000 });
+    const afterNestedRotate = await page.evaluate(() => window.__motionDebug.getMotionState());
+    const beforeForearmLength = vecDistance(getJointPosition(beforeNestedRotate, "R_Forearm"), getJointPosition(beforeNestedRotate, "R_Hand"));
+    const afterForearmLength = vecDistance(getJointPosition(afterNestedRotate, "R_Forearm"), getJointPosition(afterNestedRotate, "R_Hand"));
+    record("R rotate filters nested IK child and keeps wrist control attached", (
+      distancePlainVec(getControlRotation(beforeNestedRotate, "R_Forearm_CTRL"), getControlRotation(afterFirstNestedMove, "R_Forearm_CTRL")) < 0.001
+      && afterNestedRotate.selected_controls.length === 1
+      && afterNestedRotate.selected_controls.includes("R_Forearm_CTRL")
+      && controlJointDistance(afterNestedRotate, "R_Hand_IK") < 0.001
+      && Math.abs(afterForearmLength - beforeForearmLength) < 0.001
+    ), {
+      beforeSelection: beforeNestedRotate.selected_controls,
+      afterSelection: afterNestedRotate.selected_controls,
+      firstMoveRotation: getControlRotation(afterFirstNestedMove, "R_Forearm_CTRL"),
+      handIkDelta: controlJointDistance(afterNestedRotate, "R_Hand_IK"),
+      forearmLengthDelta: afterForearmLength - beforeForearmLength,
+    });
+    await executeCommandAndExpect("undo", {}, (state) => state.redo_stack >= 1);
+  }
+}
+
+async function validateZBrushTransformGizmoModes() {
+  await executeCommandAndExpect("select_control", { control: "COG_CTRL" }, (state) => state.selected_control === "COG_CTRL");
+  await page.locator('[data-tool="select"]').click();
+  const selectDebug = await page.evaluate(() => window.__motionDebug.getTransformGizmoDebug());
+  record("select mode shows only a light pivot, not a piled GRS gizmo", (
+    selectDebug.visible === true
+    && selectDebug.modes.length === 0
+  ), selectDebug);
+
+  await page.locator('[data-tool="translate"]').click();
+  const moveDebug = await page.evaluate(() => window.__motionDebug.getTransformGizmoDebug());
+  record("G move gizmo exposes only translate handles", (
+    moveDebug.modes.length === 1
+    && moveDebug.modes.includes("translate")
+    && moveDebug.axis_keys.includes("x")
+    && moveDebug.axis_keys.includes("y")
+    && moveDebug.axis_keys.includes("z")
+    && moveDebug.axis_keys.includes(null)
+  ), moveDebug);
+
+  await page.locator('[data-tool="rotate"]').click();
+  const rotateDebug = await page.evaluate(() => window.__motionDebug.getTransformGizmoDebug());
+  record("R rotate gizmo exposes only rotate rings", (
+    rotateDebug.modes.length === 1
+    && rotateDebug.modes.includes("rotate")
+    && rotateDebug.axis_keys.includes("x")
+    && rotateDebug.axis_keys.includes("y")
+    && rotateDebug.axis_keys.includes("z")
+    && rotateDebug.axis_keys.includes("view")
+  ), rotateDebug);
+
+  await page.locator('[data-tool="scale"]').click();
+  const scaleDebug = await page.evaluate(() => window.__motionDebug.getTransformGizmoDebug());
+  record("S scale gizmo exposes only scale handles", (
+    scaleDebug.modes.length === 1
+    && scaleDebug.modes.includes("scale")
+    && scaleDebug.axis_keys.includes("x")
+    && scaleDebug.axis_keys.includes("y")
+    && scaleDebug.axis_keys.includes("z")
+    && scaleDebug.axis_keys.includes(null)
+  ), scaleDebug);
+
+  await page.locator('[data-tool="select"]').click();
+}
+
+async function validateTimelineLoopSpeedAndRangeDrag() {
+  const beforeSpeedCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.locator("#timelineSpeedInput").evaluate((input) => {
+    input.value = "1.5";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.waitForFunction(({ count }) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => entry.name === "set_playback_speed" && entry.status === "success");
+  }, { count: beforeSpeedCount }, { timeout: 10000 });
+  const speedState = await page.evaluate(() => ({
+    summary: window.__motionDebug.getMotionStateSummary(),
+    slider: document.querySelector("#timelineSpeedInput")?.value,
+    label: document.querySelector("#timelineSpeedValue")?.textContent,
+  }));
+  record("timeline speed slider updates playback speed", (
+    Math.abs(speedState.summary.playback_speed - 1.5) < 0.001
+    && speedState.slider === "1.5"
+    && speedState.label === "1.50x"
+  ), speedState);
+
+  await executeCommandAndExpect("reset_timeline_view", {}, (state) => state.current_frame >= 1);
+  const beforeLoopDragCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  const endHandle = await page.locator(".loop-range-handle.is-end").boundingBox();
+  const tickRect = await page.locator("#timelineFrameTicks").boundingBox();
+  record("timeline loop range handles are visible", Boolean(endHandle && tickRect), { endHandle, tickRect });
+  if (endHandle && tickRect) {
+    const targetX = tickRect.x + tickRect.width * ((16 - 1 + 0.5) / 24);
+    await page.mouse.move(endHandle.x + endHandle.width / 2, endHandle.y + endHandle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(targetX, endHandle.y + endHandle.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForFunction(({ count }) => {
+      const log = window.__motionDebug?.getCommandLog?.() || [];
+      return log.slice(count).some((entry) => entry.name === "set_loop_range" && entry.status === "success");
+    }, { count: beforeLoopDragCount }, { timeout: 10000 });
+  }
+  const loopState = await page.evaluate(() => window.__motionDebug.getTimelineViewState());
+  record("timeline loop bar end handle adjusts loop range", (
+    loopState.loop_range.start === 1
+    && loopState.loop_range.end === 16
+    && loopState.loop_enabled === true
+  ), loopState);
+
+  await page.locator("#timelineLoopToggle").uncheck();
+  await page.waitForFunction(() => window.__motionDebug?.getTimelineViewState?.().loop_enabled === false, null, { timeout: 10000 });
+  await page.locator("#timelineLoopToggle").check();
+  await page.waitForFunction(() => window.__motionDebug?.getTimelineViewState?.().loop_enabled === true, null, { timeout: 10000 });
+  const loopToggleState = await page.evaluate(() => window.__motionDebug.getTimelineViewState());
+  record("timeline loop toggle controls playback loop", loopToggleState.loop_enabled === true, loopToggleState);
+
+  await page.locator('.frame-tick[data-frame="13"]').click();
+  await page.keyboard.down("Shift");
+  await page.locator('.frame-tick[data-frame="22"]').click();
+  await page.keyboard.up("Shift");
+  const selectedBeforeDrag = await page.evaluate(() => window.__motionDebug.getTimelineViewState().selected_frames);
+  const beforeMoveCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  const dragMarker = await page.locator('.key-pose.has-keyframe[data-frame="13"]').boundingBox();
+  const targetTickRect = await page.locator("#timelineFrameTicks").boundingBox();
+  record("timeline selected range and drag marker are available", (
+    selectedBeforeDrag.includes(13)
+    && selectedBeforeDrag.includes(22)
+    && Boolean(dragMarker && targetTickRect)
+  ), { selectedBeforeDrag, dragMarker, targetTickRect });
+  if (dragMarker && targetTickRect) {
+    const insertX = targetTickRect.x + targetTickRect.width * ((4 - 1) / 24);
+    await page.mouse.move(dragMarker.x + dragMarker.width / 2, dragMarker.y + dragMarker.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(insertX, dragMarker.y + dragMarker.height / 2, { steps: 8 });
+    const dragPreview = await page.evaluate(() => window.__motionDebug.getTimelineViewState());
+    record("timeline range drag shows insertion cursor", (
+      dragPreview.insert_cursor_visible === true
+      && dragPreview.insert_frame === 4
+    ), dragPreview);
+    await page.mouse.up();
+    await page.waitForFunction(({ count }) => {
+      const log = window.__motionDebug?.getCommandLog?.() || [];
+      return log.slice(count).some((entry) => entry.name === "move_timeline_range" && entry.status === "success");
+    }, { count: beforeMoveCount }, { timeout: 10000 });
+  }
+  const movedState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const movedFrames = movedState.keyframes.map((keyframe) => keyframe.timeline_frame);
+  record("timeline selected keyframe segment moves as a clip", (
+    movedFrames.includes(4)
+    && movedFrames.includes(7)
+    && movedFrames.includes(10)
+    && movedState.command_log.some((entry) => entry.name === "move_timeline_range" && entry.status === "success")
+  ), { movedFrames });
+}
+
+async function validateMotionTemplateLibrary() {
+  const expectations = [
+    ["idle_breathe_24f", 4, 24],
+    ["run_cycle_8f", 8, 16],
+    ["jump_in_place_16f", 5, 18],
+    ["crouch_16f", 4, 16],
+    ["punch_right_12f", 5, 12],
+  ];
+  const selectOptions = await page.locator("#motionTemplateSelect option").allTextContents();
+  record("motion template select exposes common templates", (
+    selectOptions.some((text) => text.includes("Idle_Breathe"))
+    && selectOptions.some((text) => text.includes("Run_8F"))
+    && selectOptions.some((text) => text.includes("Jump_16F"))
+    && selectOptions.some((text) => text.includes("Crouch_16F"))
+    && selectOptions.some((text) => text.includes("Punch_R_12F"))
+  ), { selectOptions });
+
+  for (const [templateId, expectedKeyframes, expectedLoopEnd] of expectations) {
+    await executeCommandAndExpect("apply_motion_template", { template_id: templateId }, (state) => (
+      state.keyframes === expectedKeyframes
+      && state.loop_range?.start === 1
+      && state.loop_range?.end === expectedLoopEnd
+    ));
+    const state = await page.evaluate(() => window.__motionDebug.getMotionState());
+    record(`motion template ${templateId} creates expected keyed pose count`, (
+      state.keyframes.length === expectedKeyframes
+      && state.keyframes.every((keyframe) => keyframe.template_id === templateId)
+      && state.loop_range.start === 1
+      && state.loop_range.end === expectedLoopEnd
+    ), {
+      templateId,
+      frames: state.keyframes.map((keyframe) => keyframe.timeline_frame),
+      loopRange: state.loop_range,
+    });
+    if (templateId === "idle_breathe_24f") {
+      record("idle breathe template keeps arms relaxed instead of T/A pose", idleTemplateArmsAreRelaxed(state), {
+        armDiagnostics: getIdleTemplateArmDiagnostics(state),
+      });
+    }
+    if (templateId === "punch_right_12f") {
+      await executeCommandAndExpect("validate_motion", {}, (summary) => summary.validation === "Passed");
+      const punchReport = await page.evaluate(() => window.__motionDebug.getValidationReport());
+      record("punch template validation uses rest skeleton identity, not crossed attack pose", Boolean(
+        punchReport
+        && punchReport.status === "Passed"
+        && punchReport.checks?.bone_identity_error === "Passed"
+        && !(punchReport.issues || []).some((issue) => issue.code === "bone_identity_error")
+      ), {
+        status: punchReport?.status,
+        boneIdentity: punchReport?.checks?.bone_identity_error,
+        issues: punchReport?.issues,
+      });
+    }
+  }
+
+  await page.locator("#motionTemplateSelect").selectOption("run_cycle_8f");
+  const beforeCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.locator("#applyWalkButton").click();
+  await page.waitForFunction(({ count }) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => (
+      entry.name === "apply_motion_template"
+      && entry.status === "success"
+      && entry.args?.template_id === "run_cycle_8f"
+    ));
+  }, { count: beforeCount }, { timeout: 10000 });
+  const uiApplied = await page.evaluate(() => window.__motionDebug.getMotionState());
+  record("motion template UI applies selected template", (
+    uiApplied.keyframes.length === 8
+    && uiApplied.keyframes.every((keyframe) => keyframe.template_id === "run_cycle_8f")
+  ), {
+    frames: uiApplied.keyframes.map((keyframe) => keyframe.timeline_frame),
+  });
+  await page.locator("#motionTemplateSelect").selectOption("walk_cycle_8f");
+}
+
+async function validateMotionBrainPipeline() {
+  const samples = [
+    ["\u5411\u524d\u6325\u51fa\u53f3\u62f3", "attack", "forward_strike", "strike", "right_hand"],
+    ["\u8eba\u4e0b", "posture_transition", "standing_to_ground", "lie_down", "full_body"],
+    ["\u751f\u6210\u4e00\u4e2a\u666e\u901a\u8d70\u8def", "locomotion", "walk"],
+    ["\u751f\u6210\u4e00\u4e2a\u614c\u5f20\u5954\u8dd1", "locomotion", "run"],
+    ["\u751f\u6210\u4e00\u4e2a\u81ea\u7136\u7ad9\u7acb\u547c\u5438", "idle", "breath"],
+    ["\u751f\u6210\u4e00\u4e2a\u5411\u524d\u8df3\u8dc3", "locomotion", "jump_forward"],
+    ["\u751f\u6210\u4e00\u4e2a\u53cc\u624b\u6b66\u5668\u6a2a\u6325\u653b\u51fb", "attack", "two_handed_swing"],
+    ["\u751f\u6210\u4e00\u4e2a\u75b2\u60eb\u5730\u63a8\u5f00\u95e8", "interaction", "push_door"],
+    ["\u751f\u6210\u4e00\u4e2a\u60ca\u614c\u540e\u9000\u5e76\u649e\u5230\u5899", "reaction", "wall_collision"],
+    ["\u751f\u6210\u4e00\u4e2a\u89d2\u8272\u6361\u8d77\u5730\u4e0a\u7684\u6b66\u5668", "object_manipulation", "pick_up_weapon"],
+    ["\u751f\u6210\u4e00\u4e2a\u4e3e\u624b\u6325\u624b", "gesture", "wave_hand"],
+  ];
+  const uiVisible = await page.locator("#motionBrainTextInput").count();
+  const loadButtonVisible = await page.locator("#loadMotionBrainButton").count();
+  record("motion brain UI entry is present", uiVisible === 1 && loadButtonVisible === 1, {
+    uiVisible,
+    loadButtonVisible,
+  });
+
+  for (const [text, actionType, subtype, verbFamily = null, effector = null] of samples) {
+    await executeCommandAndExpect("generate_motion_from_text", { text }, (state) => (
+      state.keyframes >= 4
+      && state.motion_brain_last_action === subtype
+      && state.motion_brain_final_passed === true
+      && state.validation === "Passed"
+    ));
+    const result = await page.evaluate(() => window.__motionDebug.getMotionBrainLastResult());
+    record(`motion brain compiles ${subtype}`, Boolean(
+      result
+      && result.action_intent?.raw_text === text
+      && result.action_ir?.action_type === actionType
+      && result.action_ir?.subtype === subtype
+      && (!verbFamily || result.action_ir?.verb_family === verbFamily)
+      && (!effector || result.action_ir?.effector === effector)
+      && Number(result.action_ir?.parser_confidence || 0) >= 0.6
+      && Array.isArray(result.motion_plan?.phases)
+      && result.motion_plan.phases.length >= 3
+      && Array.isArray(result.action_primitives)
+      && result.action_primitives.length >= 2
+      && Array.isArray(result.primitive_sequence)
+      && result.primitive_sequence.length >= result.motion_plan.phases.length
+      && Array.isArray(result.controller_keyframes)
+      && result.controller_keyframes.length >= 4
+      && result.controller_summary?.controller_ids?.includes("COG_CTRL")
+      && result.validator?.status === "Passed"
+      && result.intent_fulfillment_report?.status === "Passed"
+      && result.critic_report?.passed === true
+      && result.quality_gate?.passed === true
+      && result.final_passed === true
+    ), {
+      text,
+      intent: result?.action_intent,
+      actionIR: result?.action_ir,
+      phases: result?.motion_plan?.phases?.map((phase) => phase.phase_name),
+      primitives: result?.action_primitives?.map((primitive) => primitive.id),
+      keyframes: result?.controller_keyframes?.length,
+      validator: result?.validator?.status,
+      fulfillment: result?.intent_fulfillment_report,
+      critic: result?.critic_report?.issues?.map((issue) => issue.code),
+      gate: result?.quality_gate?.severity,
+      rigValidator: result?.rig_validation?.status,
+      autofix: result?.autofix,
+      armSummary: result?.pose_features?.summary?.arm,
+    });
+
+    if (subtype === "forward_strike") {
+      record("intent fulfillment validates right punch semantic slots", Boolean(
+        result.action_ir?.verb_family === "strike"
+        && result.action_ir?.effector === "right_hand"
+        && result.action_ir?.direction === "forward"
+        && result.motion_plan?.phases?.some((phase) => phase.phase_name === "impact")
+        && result.intent_fulfillment_report?.checks?.strike_forward_motion === "Passed"
+      ), {
+        actionIR: result.action_ir,
+        phases: result.motion_plan?.phases?.map((phase) => phase.phase_name),
+        fulfillment: result.intent_fulfillment_report,
+      });
+    }
+
+    if (subtype === "standing_to_ground") {
+      record("intent fulfillment validates lie down semantic slots", Boolean(
+        result.action_ir?.verb_family === "lie_down"
+        && result.action_ir?.target === "floor"
+        && result.action_ir?.direction === "down"
+        && result.motion_plan?.phases?.some((phase) => phase.phase_name === "settle_on_floor")
+        && result.intent_fulfillment_report?.checks?.lie_down_cog_drop === "Passed"
+      ), {
+        actionIR: result.action_ir,
+        phases: result.motion_plan?.phases?.map((phase) => phase.phase_name),
+        fulfillment: result.intent_fulfillment_report,
+      });
+    }
+
+    if (subtype === "walk") {
+      record("motion critic fixes ordinary walk arms to relaxed FK swing", Boolean(
+        result.final_passed === true
+        && (result.pose_features?.summary?.arm?.average_hand_ik_weight || 0) <= 0.2
+        && !result.controller_summary?.controller_ids?.includes("R_Hand_IK")
+        && !result.controller_summary?.controller_ids?.includes("L_Hand_IK")
+        && result.controller_summary?.controller_ids?.includes("R_UpperArm_CTRL")
+        && result.autofix?.fixes?.includes("converted_locomotion_arms_to_fk_relaxed_swing")
+      ), {
+        controllerIds: result.controller_summary?.controller_ids,
+        handIkWeight: result.pose_features?.summary?.arm?.average_hand_ik_weight,
+        fixes: result.autofix?.fixes,
+      });
+    }
+
+    if (subtype === "breath") {
+      const selectedSource = await page.locator("#motionTemplateSelect option:checked").textContent();
+      const applyTemplateDisabled = await page.locator("#applyWalkButton").isDisabled();
+      record("motion brain generated clip is shown as current motion source", Boolean(
+        selectedSource?.includes("Motion Brain")
+        && selectedSource?.includes("自然站立呼吸")
+        && applyTemplateDisabled
+      ), { selectedSource, applyTemplateDisabled });
+    }
+
+    if (subtype === "wave_hand") {
+      record("motion critic allows raised hand when intent is wave", Boolean(
+        result.final_passed === true
+        && (result.pose_features?.summary?.arm?.max_wrist_height_relative_to_chest || 0) > 0.05
+        && result.action_intent?.hand_usage === "raise_hand_wave"
+      ), {
+        maxWristVsChest: result.pose_features?.summary?.arm?.max_wrist_height_relative_to_chest,
+        handUsage: result.action_intent?.hand_usage,
+        critic: result.critic_report?.issues?.map((issue) => issue.code),
+      });
+    }
+
+    if (subtype === "push_door") {
+      record("motion critic allows HandIK for contact interaction", Boolean(
+        result.final_passed === true
+        && (result.pose_features?.summary?.arm?.average_hand_ik_weight || 0) > 0.2
+        && result.action_intent?.validation_profile === "interaction"
+      ), {
+        handIkWeight: result.pose_features?.summary?.arm?.average_hand_ik_weight,
+        validationProfile: result.action_intent?.validation_profile,
+      });
+    }
+  }
+
+  const beforeGenericRejectState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  await executeCommandAndExpect("generate_motion_from_text", { text: "\u968f\u4fbf\u52a8\u4e00\u4e0b" }, (state) => (
+    state.keyframes >= 4
+    && state.motion_brain_last_action === "generic"
+    && state.motion_brain_final_passed === false
+  ));
+  const genericResult = await page.evaluate(() => window.__motionDebug.getMotionBrainLastResult());
+  const afterGenericRejectState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  record("generic fallback is visible but not marked fully accepted", Boolean(
+    genericResult
+    && genericResult.action_ir?.action_type === "generic"
+    && genericResult.action_ir?.uncertainty_flags?.includes("generic_fallback")
+    && genericResult.controller_keyframes?.length >= 4
+    && !genericResult.validator?.issues?.some((issue) => issue.code === "NO_VISIBLE_ACTION")
+    && genericResult.quality_gate?.passed === false
+    && genericResult.final_passed === false
+  ), {
+    actionIR: genericResult?.action_ir,
+    validatorIssues: genericResult?.validator?.issues?.map((issue) => issue.code),
+    gate: genericResult?.quality_gate?.severity,
+    finalPassed: genericResult?.final_passed,
+  });
+  record("quality gate blocker does not overwrite current accepted timeline", Boolean(
+    genericResult?.rejected_by_quality_gate === true
+    && afterGenericRejectState.keyframes?.length === beforeGenericRejectState.keyframes?.length
+    && afterGenericRejectState.keyframes?.[0]?.label === beforeGenericRejectState.keyframes?.[0]?.label
+  ), {
+    rejected: genericResult?.rejected_by_quality_gate,
+    beforeFirstLabel: beforeGenericRejectState.keyframes?.[0]?.label,
+    afterFirstLabel: afterGenericRejectState.keyframes?.[0]?.label,
+    beforeKeyframes: beforeGenericRejectState.keyframes?.length,
+    afterKeyframes: afterGenericRejectState.keyframes?.length,
+  });
+
+  await executeCommandAndExpect("self_check_motion_templates", {}, (state) => state.motion_template_self_check_passed !== null);
+  const templateSelfCheck = await page.evaluate(() => window.__motionDebug.getMotionTemplateSelfCheck());
+  record("motion template self-check reviews every generated template", Boolean(
+    templateSelfCheck
+    && templateSelfCheck.reports?.length >= 6
+    && templateSelfCheck.reports.every((item) => item.critic_report && item.quality_gate)
+  ), {
+    passed: templateSelfCheck?.passed,
+    reports: templateSelfCheck?.reports?.map((item) => ({
+      template: item.template_id,
+      gate: item.quality_gate?.severity,
+      issues: item.critic_report?.issues?.map((issue) => issue.code),
+    })),
+  });
+
+  const beforeUiPreviewState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  await page.locator("#motionBrainTextInput").fill("\u751f\u6210\u4e00\u4e2a\u7ffb\u6eda\u95ea\u907f");
+  const beforePreviewCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.locator("#generateMotionBrainButton").click();
+  await page.waitForFunction(({ count }) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => (
+      entry.name === "preview_motion_from_text"
+      && entry.status === "success"
+    ));
+  }, { count: beforePreviewCount }, { timeout: 10000 });
+  const uiResult = await page.evaluate(() => window.__motionDebug.getMotionBrainLastResult());
+  const afterUiPreviewState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const loadButtonEnabled = await page.locator("#loadMotionBrainButton").isEnabled();
+  record("motion brain UI previews unknown primitive combination before loading", Boolean(
+    uiResult
+    && uiResult.action_intent?.subtype === "dodge_roll"
+    && uiResult.motion_plan?.prototype_id === null
+    && uiResult.motion_plan?.phases?.some((phase) => phase.phase_name === "roll")
+    && uiResult.final_passed === true
+    && uiResult.ready_to_load === true
+    && uiResult.loaded_to_timeline === false
+    && afterUiPreviewState.keyframes?.[0]?.label === beforeUiPreviewState.keyframes?.[0]?.label
+    && loadButtonEnabled
+  ), {
+    subtype: uiResult?.action_intent?.subtype,
+    prototype: uiResult?.motion_plan?.prototype_id,
+    phases: uiResult?.motion_plan?.phases?.map((phase) => phase.phase_name),
+    finalPassed: uiResult?.final_passed,
+    readyToLoad: uiResult?.ready_to_load,
+    loadedToTimeline: uiResult?.loaded_to_timeline,
+    beforeFirstLabel: beforeUiPreviewState.keyframes?.[0]?.label,
+    afterFirstLabel: afterUiPreviewState.keyframes?.[0]?.label,
+    loadButtonEnabled,
+  });
+
+  const beforeLoadCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.locator("#loadMotionBrainButton").click();
+  await page.waitForFunction(({ count }) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => (
+      entry.name === "load_motion_brain_result"
+      && entry.status === "success"
+    ));
+  }, { count: beforeLoadCount }, { timeout: 10000 });
+  const loadedUiResult = await page.evaluate(() => window.__motionDebug.getMotionBrainLastResult());
+  const loadedUiState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const selectedMotionOption = await page.locator("#motionTemplateSelect option:checked").textContent();
+  const loadButtonEnabledAfterLoad = await page.locator("#loadMotionBrainButton").isEnabled();
+  record("motion brain UI loads previewed text motion into timeline", Boolean(
+    loadedUiResult
+    && loadedUiResult.loaded_to_timeline === true
+    && loadedUiState.keyframes?.some((keyframe) => keyframe.motion_brain)
+    && selectedMotionOption?.includes("Motion Brain")
+    && !loadButtonEnabledAfterLoad
+  ), {
+    loadedToTimeline: loadedUiResult?.loaded_to_timeline,
+    readyToLoad: loadedUiResult?.ready_to_load,
+    frames: loadedUiState.keyframes?.map((keyframe) => keyframe.timeline_frame),
+    selectedMotionOption,
+    loadButtonEnabledAfterLoad,
+  });
+}
+
 async function validateCurrentFrameCopyPasteAndMirror() {
   await executeCommandAndExpect("set_current_frame", { frame: 1 }, (state) => state.current_frame === 1);
   await executeCommandAndExpect("copy_current_frame", {}, () => true);
@@ -782,6 +1582,8 @@ async function validateCurrentFrameCopyPasteAndMirror() {
 }
 
 async function validateWalkArmSolveModesMatchBasic() {
+  await executeCommandAndExpect("export_motion_json", {}, (state) => state.skeleton === "Humanoid_v1");
+  const restoreJson = await page.evaluate(() => window.__motionDebug.getExportedJson());
   const basic = await buildWalkStateForSolveMode("basic");
   const hybrid = await buildWalkStateForSolveMode("hybrid");
   const pinned = await buildWalkStateForSolveMode("pinned");
@@ -789,9 +1591,8 @@ async function validateWalkArmSolveModesMatchBasic() {
   const pinnedComparison = compareWalkArmOffsets(basic, pinned);
   record("hybrid walk arm guide matches simple IK", hybridComparison.pass, hybridComparison);
   record("pinned walk arm guide matches simple IK", pinnedComparison.pass, pinnedComparison);
-  await executeCommandAndExpect("create_humanoid_skeleton", {}, (state) => state.skeleton === "Humanoid_v1");
-  await executeCommandAndExpect("create_ik_controls", { solve_mode: "hybrid" }, (state) => (
-    state.ik_controls === 14 && state.control_solve_mode === "hybrid"
+  await executeCommandAndExpect("import_motion_json", { json: restoreJson }, (state) => (
+    state.skeleton === "Humanoid_v1" && state.ik_controls === 14
   ));
 }
 
@@ -874,7 +1675,8 @@ async function importSampleGlbAndValidateToeFallback() {
     state.skeleton === "Humanoid_v1"
     && state.joints === 19
     && (state.missing_required_mapping || []).length === 0
-    && state.current_stage === "control_rig"
+    && state.current_stage === "skeleton"
+    && state.editable_assignment_skeleton === true
   ));
   const hipChipAfterBind = await getMappingChipVisualState("Hips");
   record("confirmed joint chip turns yellow after binding", (
@@ -906,13 +1708,38 @@ async function importSampleGlbAndValidateToeFallback() {
     fallbackJoints,
   });
 
+  await executeCommandAndExpect("save_initial_skeleton", {}, (state) => state.initial_skeleton_saved === true);
+  await clickAndExpect("#toolbarCreateIkButton", "set_stage", (state) => state.current_stage === "control_rig");
   await clickAndExpect("#createIkButton", "create_ik_controls", (state) => (
     state.ik_controls === 14
     && state.joint_controls === 19
-    && state.visible_joint_debug_controls === false
+    && state.visible_joint_debug_controls === true
     && state.control_ids.includes("COG_CTRL")
     && state.control_ids.includes("Chest_CTRL")
   ));
+  await executeCommandAndExpect("generate_motion_from_text", { text: "\u751f\u6210\u4e00\u4e2a\u81ea\u7136\u7ad9\u7acb\u547c\u5438" }, (state) => (
+    state.motion_brain_last_action === "breath"
+    && state.motion_brain_final_passed === true
+    && state.motion_brain_quality_gate === "passed"
+    && state.validation === "Passed"
+    && state.keyframes >= 4
+  ));
+  const importedIdleBrain = await page.evaluate(() => window.__motionDebug.getMotionBrainLastResult());
+  record("imported GLB idle breath self-critic keeps arms relaxed", Boolean(
+    importedIdleBrain?.final_passed === true
+    && importedIdleBrain?.quality_gate?.passed === true
+    && (importedIdleBrain?.pose_features?.summary?.arm?.max_wrist_height_relative_to_chest || 0) < 0
+    && (importedIdleBrain?.pose_features?.summary?.arm?.average_hand_ik_weight || 0) <= 0.2
+    && !(importedIdleBrain?.critic_report?.issues || []).some((issue) => ["ARM_TOO_HIGH", "TPOSE_RESIDUE"].includes(issue.code))
+    && importedIdleBrain?.autofix?.fixes?.includes("converted_locomotion_arms_to_fk_relaxed_swing")
+  ), {
+    finalPassed: importedIdleBrain?.final_passed,
+    gate: importedIdleBrain?.quality_gate?.severity,
+    maxWristVsChest: importedIdleBrain?.pose_features?.summary?.arm?.max_wrist_height_relative_to_chest,
+    handIkWeight: importedIdleBrain?.pose_features?.summary?.arm?.average_hand_ik_weight,
+    criticIssues: importedIdleBrain?.critic_report?.issues?.map((issue) => issue.code),
+    fixes: importedIdleBrain?.autofix?.fixes,
+  });
   const beforeRotateDebug = await page.evaluate(() => window.__motionDebug.getSourceRigDebug());
   await executeCommandAndExpect("rotate_joint_branch", { joint: "Hips", angle: 0.45, axis: [0, 1, 0] }, (state) => (
     state.joint_rotation_overrides >= 1
@@ -926,6 +1753,7 @@ async function importSampleGlbAndValidateToeFallback() {
     afterHipsQuat,
     hipsQuatDelta,
   });
+  await page.locator("#motionTemplateSelect").selectOption("walk_cycle_8f");
   await clickAndExpect("#applyWalkButton", "apply_motion_template", (state) => state.keyframes === 8 && state.direction?.confirmed === true);
   const importedWalkState = await page.evaluate(() => window.__motionDebug.getMotionState());
   record("sample GLB walk keeps hands on their own sides", walkHandsStayOnOwnSides(importedWalkState), {
@@ -1163,6 +1991,38 @@ function walkArmChainsStayOnOwnSides(payload) {
       && dotPlainVec(subPlainVec(rightHand, center), sideAxis) > 0.01
       && dotPlainVec(subPlainVec(leftForearm, center), sideAxis) < -0.01
       && dotPlainVec(subPlainVec(leftHand, center), sideAxis) < -0.01;
+  });
+}
+
+function idleTemplateArmsAreRelaxed(payload) {
+  const diagnostics = getIdleTemplateArmDiagnostics(payload);
+  return diagnostics.length > 0 && diagnostics.every((item) => (
+    item.wristVsChest < 0.06
+    && item.upperArmDownAngle < 68
+  ));
+}
+
+function getIdleTemplateArmDiagnostics(payload) {
+  return (payload.keyframes || []).flatMap((frame) => {
+    const joints = new Map((frame.joints || []).map((joint) => [joint.name, joint.position]));
+    const chest = joints.get("Chest") || joints.get("Spine") || joints.get("Hips");
+    if (!chest) {
+      return [{ frame: frame.timeline_frame, side: "-", reason: "missing chest" }];
+    }
+    return ["R", "L"].map((side) => {
+      const shoulder = joints.get(`${side}_UpperArm`);
+      const elbow = joints.get(`${side}_Forearm`);
+      const wrist = joints.get(`${side}_Hand`);
+      if (!shoulder || !elbow || !wrist) {
+        return { frame: frame.timeline_frame, side, reason: "missing arm joints" };
+      }
+      return {
+        frame: frame.timeline_frame,
+        side,
+        wristVsChest: Number(wrist[1]) - Number(chest[1]),
+        upperArmDownAngle: angleBetweenPlainVec(subPlainVec(elbow, shoulder), [0, -1, 0]),
+      };
+    });
   });
 }
 
@@ -1440,6 +2300,13 @@ function dotPlainVec(a, b) {
 function normalizePlainVec(vector) {
   const length = Math.hypot(Number(vector[0]), Number(vector[1]), Number(vector[2]));
   return length > 0.0001 ? vector.map((value) => Number(value) / length) : [1, 0, 0];
+}
+
+function angleBetweenPlainVec(a, b) {
+  const av = normalizePlainVec(a);
+  const bv = normalizePlainVec(b);
+  const dot = Math.max(-1, Math.min(1, dotPlainVec(av, bv)));
+  return (Math.acos(dot) * 180) / Math.PI;
 }
 
 function quaternionDelta(a, b) {

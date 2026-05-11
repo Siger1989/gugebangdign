@@ -1,0 +1,95 @@
+# Motion Brain
+
+Motion Brain is the global action compiler for the app. User text is treated as source code, ActionPrimitive is the instruction set, and controller keyframes are the executable output.
+
+The public entry is:
+
+```js
+MotionBrain.generate_from_text("生成一个慌张地奔跑")
+```
+
+The app command wrapper is:
+
+```js
+window.__motionDebug.executeCommandByName("generate_motion_from_text", {
+  text: "生成一个慌张地奔跑",
+})
+```
+
+## Pipeline
+
+1. `ActionIntentParser` parses natural language into structured `ActionIntent`, parser confidence, parsed verbs, body parts, direction, target, missing slots, and uncertainty flags.
+2. `ActionIRBuilder` compiles `ActionIntent` into `ActionIR`, the stable semantic frame used by the rest of the system.
+3. `MotionPlanner` uses `ActionIR` and `ActionGrammar` to select a prototype shortcut or compose semantic phases.
+4. `PrimitiveComposer` expands phases into parameterized ActionPrimitive operations.
+5. `ControllerCurveGenerator` converts the primitive-backed plan into Root / COG / Pelvis / Chest / Head / HandIK / FootIK / Pole / FK controller keyframes.
+6. The existing app rig solver applies controller keyframes to `MotionState.ik_controls`, FK controls, joints, and timeline keyframes.
+7. `PoseSampler` samples solved keyframes and in-between frames from the final rig result.
+8. `PoseFeatureExtractor` extracts arm, body, leg, contact, and rhythm features from solved poses.
+9. `MotionCritic` reviews those features against `ActionIR` and human-motion rules.
+10. `IntentFulfillmentValidator` checks whether the requested effector, direction, target, phase chain, and visible action actually happened.
+11. `ActionValidator` checks parser confidence, generic fallback state, plan/controller data, and final solved pose features.
+12. `MotionQualityGate` classifies issues as blocker, warning, or style.
+13. `ActionAutoFixer` repairs critic/validator/intent failures and re-runs solve, sample, feature extraction, critic, validator, fulfillment, and gate checks for up to 3 iterations.
+14. The app stores the final result in `MotionState.motion_brain.last_result` and writes playable timeline keyframes. Remaining blockers are shown as `needs_review`, not `Passed`.
+
+LLM integration must stay before step 4. An LLM may output `ActionIntent` JSON or `MotionPlan` JSON only. It must not output final skeleton poses or directly write timeline keyframes.
+
+## Files
+
+- `motion_brain/action_intent.js`: ActionIntent schema and validation.
+- `motion_brain/action_intent_parser.js`: keyword parser, replaceable by a future LLM parser.
+- `motion_brain/action_ir.js`: ActionIR schema, physics/contact extension slots, and validation.
+- `motion_brain/action_ir_builder.js`: ActionIntent to ActionIR compiler.
+- `motion_brain/action_grammar.js`: action grammar, default phases, and required primitives.
+- `motion_brain/action_primitive_library.js`: primitive instruction set.
+- `motion_brain/primitive_composer.js`: parameterized primitive sequence generation.
+- `motion_brain/action_prototype_library.js`: high-quality shortcuts that still flow through the pipeline.
+- `motion_brain/motion_planner.js`: prototype selection and fallback phase planning.
+- `motion_brain/controller_curve_generator.js`: MotionPlan to controller keyframes.
+- `motion_brain/pose_sampler.js`: final solved pose sampling.
+- `motion_brain/pose_feature_extractor.js`: final pose feature extraction.
+- `motion_brain/motion_critic.js`: intent-aware global motion critic.
+- `motion_brain/intent_fulfillment_validator.js`: semantic completion checks for strike, lie down, interaction, walk, and gesture intents.
+- `motion_brain/motion_quality_gate.js`: blocker/warning/style quality gate.
+- `motion_brain/critic_report.js`: critic report and issue shape.
+- `motion_brain/auto_fix_iteration.js`: auto-fix iteration report shape.
+- `motion_brain/action_validator.js`: plan, controller, and final solved pose checks.
+- `motion_brain/action_auto_fixer.js`: automatic repair pass.
+- `motion_brain/llm_adapter.js`: schema-only LLM adapter guards.
+- `motion_brain/motion_brain_pipeline.js`: unified entry.
+
+## Current Prototype Shortcuts
+
+- `Idle_Breath`
+- `Walk_Basic`
+- `Run_Basic`
+- `Jump_Forward`
+- `Attack_TwoHanded_Swing`
+- `Hit_Backward`
+- `Crouch_Basic`
+- `Turn_90`
+- `Push_Object`
+- `Pick_Up_Object`
+- `Wave_Hand`
+
+Unknown actions fall back to grammar composition. For example, dodge roll currently uses primitives such as `crouch_down`, `shift_weight`, `release_foot`, `rotate_torso`, and `recover_pose`.
+
+Generic fallback is never reported as fully accepted. It can generate a visible draft action, but parser uncertainty and `generic_fallback` keep the quality gate in review state.
+
+## Coordinate And Controller Space
+
+- Character local axes come from `getRigBasis()` in `app.js`: `up` is hips-to-head, `right` is inferred from right-side joints minus left-side joints, and `forward` is inferred from foot-to-toe direction then orthogonalized.
+- Controller offsets generated by Motion Brain are local semantic offsets. `app.js#getMotionBrainControlPosition()` converts them into world-space controller positions using `basis.right`, `basis.up`, and `basis.forward`.
+- HandIK / FootIK controller targets are stored and solved in world space after conversion.
+- Pole targets are stored in world space after conversion; walk/template code includes a post-torso-sync stabilization pass so elbow poles remain outside the shoulder line.
+- Root / COG / Pelvis / Chest / Head are applied in this order by controller keyframes and the app rig solver. Pelvis/Chest/Head rotations are Euler radians.
+- Humanoid joint-to-controller mapping is defined by `CORE_IK_CONTROL_DEFS`, `JOINT_CONTROL_DEFS`, and `IK_CONTROL_DEFS` in `app.js`.
+- Ground is the current foot/toe floor estimate from `getFootGroundClampY()` in `app.js`; contact locks pin world-space IK target positions during locked phases.
+- Physics extension slots live in `ActionIR`: `external_force`, `physics_weight`, `support_points`, `body_mass_hint`, `impact_force_hint`, `ground_contact_points`, and `prop_weight_hint`.
+
+## App Entrypoints
+
+- UI/debug command: `generate_motion_from_text`
+- Debug helper: `window.__motionDebug.generateMotionFromText(text)`
+- Template self-check: `self_check_motion_templates` or `window.__motionDebug.selfCheckMotionTemplates()`

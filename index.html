@@ -60,7 +60,7 @@
       <nav class="flow-steps" aria-label="工作区">
         <label class="work-action is-active" id="toolbarImportButton" data-stage="model" data-action="import_model" for="modelFileInput" role="button" tabindex="0">导入模型</label>
         <button class="work-action" id="toolbarIdentifyButton" data-stage="skeleton" data-action="identify_skeleton" type="button">骨骼识别</button>
-        <button class="work-action" id="toolbarCreateIkButton" data-stage="control_rig" data-action="create_ik" type="button">生成 IK 控制器</button>
+        <button class="work-action" id="toolbarCreateIkButton" data-stage="control_rig" data-action="create_ik" type="button">生成 IK/FK 控制器</button>
         <button class="work-action" id="toolbarMotionButton" data-stage="motion" data-action="open_motion" type="button">动作编辑</button>
         <button class="work-action" id="toolbarExportButton" data-stage="export" data-action="export_motion" type="button">导出</button>
       </nav>
@@ -112,7 +112,7 @@
       </div>
       <div class="scene-hint">
         <strong>当前工作流</strong>
-        <span>导入 T-Pose GLB 后，先确认角色前方，再自动识别模型自带骨骼并生成 IK 控制器。</span>
+        <span>导入 T-Pose GLB 后，先确认角色前方，再自动识别模型自带骨骼并生成 IK/FK 控制器。</span>
       </div>
     </aside>
 
@@ -127,7 +127,7 @@
           <label><input id="showGroundPlane" type="checkbox" checked> 地面</label>
           <label><input id="showValidationIssues" type="checkbox" checked> 问题提示</label>
           <label class="advanced-toggle"><input id="showIkControls" type="checkbox" checked> IK Controls</label>
-          <label class="advanced-toggle"><input id="showJointDebugControls" type="checkbox"> Joint Debug</label>
+          <label class="advanced-toggle"><input id="showJointDebugControls" type="checkbox" checked> FK 骨骼</label>
           <label class="advanced-toggle"><input id="showLabels" type="checkbox"> Labels</label>
           <label class="advanced-toggle"><input id="showMotionPaths" type="checkbox" checked> Motion Path</label>
           <label class="advanced-toggle"><input id="showFootLocks" type="checkbox" checked> Foot Locks</label>
@@ -160,7 +160,7 @@
           </label>
         </div>
         <div class="viewport-help">
-          <span>左键拖动 IK 控制器</span>
+          <span>左键拖动 IK/FK 控制器</span>
           <span>中键旋转视图</span>
           <span>Shift + 中键平移</span>
           <span>Ctrl + 中键 / 滚轮缩放</span>
@@ -174,15 +174,15 @@
           <div class="timeline-metrics">
             <span>关键帧：<strong id="timelineKeyPoseCount">0 / 24</strong></span>
             <span>FPS：<input id="timelineFpsInput" class="metric-number-input" type="number" min="1" max="120" step="1" value="24" aria-label="播放 FPS"></span>
-            <span>窗口：<strong id="timelineRangeValue">1-24</strong><span id="timelinePinnedBadge" class="timeline-pin-badge" hidden>固定</span></span>
+            <span>可见帧：<strong id="timelineRangeValue">1-24</strong><span id="timelinePinnedBadge" class="timeline-pin-badge" hidden>视图已固定</span></span>
             <span class="timeline-window-controls" aria-label="时间轴窗口控制">
-              <button id="timelinePanLeftButton" class="timeline-metric-button timeline-icon-button" type="button" aria-label="时间轴窗口左移">&lt;</button>
-              <button id="timelineZoomOutButton" class="timeline-metric-button timeline-icon-button" type="button" aria-label="时间轴缩小窗口">-</button>
-              <button id="timelineZoomInButton" class="timeline-metric-button timeline-icon-button" type="button" aria-label="时间轴放大窗口">+</button>
-              <button id="timelinePanRightButton" class="timeline-metric-button timeline-icon-button" type="button" aria-label="时间轴窗口右移">&gt;</button>
+              <button id="timelinePanLeftButton" class="timeline-metric-button timeline-icon-button" type="button" title="左移可见帧范围" aria-label="左移可见帧范围">左移</button>
+              <button id="timelineZoomOutButton" class="timeline-metric-button timeline-icon-button" type="button" title="显示更多帧" aria-label="显示更多帧">缩小</button>
+              <button id="timelineZoomInButton" class="timeline-metric-button timeline-icon-button" type="button" title="显示更少帧" aria-label="显示更少帧">放大</button>
+              <button id="timelinePanRightButton" class="timeline-metric-button timeline-icon-button" type="button" title="右移可见帧范围" aria-label="右移可见帧范围">右移</button>
             </span>
-            <button id="timelineResetViewButton" class="timeline-metric-button" type="button">重置窗口</button>
-            <span>循环：<strong id="timelineLoopState">开</strong></span>
+            <button id="timelineResetViewButton" class="timeline-metric-button" type="button">重置可见帧</button>
+            <label class="timeline-loop-toggle"><input id="timelineLoopToggle" type="checkbox" checked> 循环：<strong id="timelineLoopState">开</strong></label>
           </div>
         </div>
         <div class="timeline-transport" aria-label="时间轴播放控制">
@@ -197,6 +197,11 @@
           <button id="timelineMirrorFrameButton" type="button">镜像当前帧</button>
           <button id="timelineSmoothButton" type="button">平滑当前段</button>
           <button id="validateMotionButton" type="button">验证动作</button>
+          <label class="timeline-speed-control">
+            <span>速度</span>
+            <input id="timelineSpeedInput" type="range" min="0.25" max="2" step="0.05" value="1" aria-label="播放速度">
+            <strong id="timelineSpeedValue">1.00x</strong>
+          </label>
           <label>
             <span>当前帧</span>
             <input id="timelineFrameSlider" type="range" min="1" max="24" step="1" value="1" tabindex="-1">
@@ -206,6 +211,7 @@
         </div>
         <div class="timeline-editor">
           <div class="timeline-track-labels" aria-hidden="true">
+            <span>循环区间</span>
             <span>帧尺</span>
             <span>关键姿势</span>
             <span>全局 / 重心</span>
@@ -213,7 +219,9 @@
             <span>手部 IK</span>
             <span>脚部 IK</span>
           </div>
-          <div class="timeline-dopesheet">
+          <div id="timelineDopesheet" class="timeline-dopesheet">
+            <div id="timelineLoopRegion" class="timeline-loop-region" aria-label="循环动作区间"></div>
+            <div id="timelineInsertCursor" class="timeline-insert-cursor" hidden></div>
             <div id="timelineFrameTicks" class="timeline-frame-ticks" aria-label="1 到 24 帧"></div>
             <div id="timelineKeyframes" class="timeline-keyframes" aria-label="关键帧轨道"></div>
           </div>
@@ -243,10 +251,12 @@
         <h2>骨骼识别</h2>
         <p class="stage-note">地图上的黄色箭头是固定前方。导入 T-Pose 模型后，用下方模型旋转按钮把角色正面对准箭头，再确认方向并点击“绑定骨骼赋值”。</p>
         <button id="createSkeletonButton">绑定骨骼赋值</button>
+        <button id="saveInitialSkeletonButton" type="button">保存为初始骨骼</button>
         <button id="createSourceSkeletonButton" class="hidden-command" type="button">显示源骨骼参考</button>
         <div class="mapping-summary">
           <span>导入骨骼</span><strong id="sourceBoneCountValue">0</strong>
           <span>T-Pose 基准</span><strong id="restPoseValue">未读取</strong>
+          <span>初始骨骼</span><strong id="initialSkeletonStateValue">未生成</strong>
           <span>映射完成</span><strong id="mappingCountValue">0 / 19</strong>
         </div>
         <div class="direction-confirm">
@@ -286,8 +296,8 @@
       </section>
 
       <section class="inspector-section" data-panel="ik">
-        <h2>IK 控制器</h2>
-        <p class="stage-note">根据已识别命名的模型骨骼生成 IK 控制器。当前只控制 IK，不展开骨骼细节编辑。</p>
+        <h2>IK/FK 控制器</h2>
+        <p class="stage-note">根据已识别命名的模型骨骼生成 IK 末端和 FK 骨骼控制器。</p>
         <label class="field-row compact">
           <span>控制逻辑</span>
           <select id="controlSolveModeSelect">
@@ -296,7 +306,7 @@
             <option value="basic">简易 IK</option>
           </select>
         </label>
-        <button id="createIkButton">生成 IK 控制器</button>
+        <button id="createIkButton">生成 IK/FK 控制器</button>
         <label class="field-row compact">
           <span>选中控制器</span>
           <select id="selectedControlSelect"></select>
@@ -313,7 +323,20 @@
 
       <section class="inspector-section" data-panel="motion">
         <h2>动作编辑</h2>
-        <button id="applyWalkButton">加载 Walk_8F 走路模板</button>
+        <label class="field-row compact">
+          <span>动作模板</span>
+          <select id="motionTemplateSelect"></select>
+        </label>
+        <button id="applyWalkButton">加载动作模板</button>
+        <label class="field-row compact motion-brain-input">
+          <span>Motion Brain</span>
+          <input id="motionBrainTextInput" type="text" value="生成一个自然站立呼吸" spellcheck="false">
+        </label>
+        <div class="motion-brain-actions">
+          <button id="generateMotionBrainButton">生成 / 自检文字动作</button>
+          <button id="loadMotionBrainButton" disabled>加载文字生成动作</button>
+        </div>
+        <pre id="motionBrainResultPreview" class="motion-brain-preview">Motion Brain: 尚未生成</pre>
         <div class="button-row">
           <button id="playButton">播放</button>
           <button id="stopButton">停止</button>
