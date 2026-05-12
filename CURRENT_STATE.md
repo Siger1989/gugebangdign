@@ -1,5 +1,46 @@
 # CURRENT_STATE
 
+## Motion Brain Self-Check Must Auto-Fix - 2026-05-12
+
+Current objective:
+- Fix the Motion Brain UI/pipeline behavior where a generated text motion can show `self-check failed / cannot load` and stop, instead of automatically adjusting and re-validating.
+
+Current progress:
+- Started after user clarified this is not an input issue:
+  - If self-check fails, Motion Brain should attempt AutoFix.
+  - The UI should not silently leave the user with a disabled load button as the end state.
+  - If AutoFix still fails after bounded retries, the failure must explain what could not be fixed.
+- Implemented:
+  - Added a forced AutoFix retry path inside `runMotionBrainQualityLoop()` for clearly parsed, non-generic actions.
+  - The forced retry converts quality-gate failures into fixable issue codes for idle/walk/run, jump, attack, interaction, and posture transition actions.
+  - Generic / low-confidence parser fallback still cannot be marked accepted; it remains needs-review by design.
+  - Updated the Motion Brain load button:
+    - passed + AutoFix applied: `已自动修正，加载动作`
+    - blocked after retries: `自动修正 N 次仍未通过`
+  - Updated Motion Brain debug preview to show AutoFix attempts and blockers.
+  - Added UI regression coverage for the exact short prompt `自然站立呼吸`, not only `生成一个自然站立呼吸`.
+
+Files changed:
+- `CURRENT_STATE.md`
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+
+Validation result: PASS.
+
+Commands run:
+- `node --check app.js`: PASS
+- `node --check scripts\validate_demo_import.mjs`: PASS
+- `npm run check`: PASS
+- `npm run validate:import`: PASS
+
+Validation details:
+- Full validation log: `artifacts/logs/validate_motion_brain_autofix_gate_20260512.log`
+- NPM check log: `artifacts/logs/npm_check_motion_brain_autofix_gate_20260512.log`
+- Acceptance screenshot: `artifacts/screenshots/pipeline_acceptance_20260512_041854Z.png`
+
+Current blocking issue:
+- Need sync to publish repo and push.
+
 ## IK/FK Hybrid Wrist Rotation Interference - 2026-05-12
 
 Current objective:

@@ -3739,12 +3739,29 @@ function runMotionBrainQualityLoop(initialResult) {
         ...(review.validator_report?.issues || []),
       ],
     };
-    const fixed = MotionBrain.autoFixer.fix({
+    let fixed = MotionBrain.autoFixer.fix({
       intent: result.action_ir || result.action_intent,
       motion_plan: result.motion_plan,
       controller_keyframes: result.controller_keyframes,
       validation: combinedReviewReport,
     });
+    if (!fixed.applied) {
+      const forcedReport = createForcedMotionBrainAutoFixReport(result, combinedReviewReport);
+      if (forcedReport) {
+        fixed = MotionBrain.autoFixer.fix({
+          intent: result.action_ir || result.action_intent,
+          motion_plan: result.motion_plan,
+          controller_keyframes: result.controller_keyframes,
+          validation: forcedReport,
+        });
+        if (fixed.applied) {
+          fixed = {
+            ...fixed,
+            fixes: ["forced_quality_gate_repair", ...(fixed.fixes || [])],
+          };
+        }
+      }
+    }
     const autoFixIteration = createAutoFixIteration({
       iteration: fixIteration,
       before_report: combinedReviewReport,
@@ -3763,6 +3780,65 @@ function runMotionBrainQualityLoop(initialResult) {
   MotionState.motion_brain = { last_result: deepClone(result) };
   MotionState.validation_report = result.rig_validation || buildValidationReport();
   return result;
+}
+
+function createForcedMotionBrainAutoFixReport(result, report) {
+  const action = result?.action_ir || result?.action_intent || {};
+  const parserConfidence = Number(action.parser_confidence ?? result?.parser?.parser_confidence ?? 1);
+  const uncertaintyFlags = action.uncertainty_flags || result?.action_intent?.uncertainty_flags || [];
+  if (
+    parserConfidence < 0.6
+    || action.action_type === "generic"
+    || action.subtype === "generic"
+    || uncertaintyFlags.includes("generic_fallback")
+  ) {
+    return null;
+  }
+  const existingCodes = new Set((report?.issues || []).map((issue) => issue.code));
+  const forcedCodes = getForcedMotionBrainAutoFixCodes(action)
+    .filter((code) => !existingCodes.has(code));
+  if (forcedCodes.length === 0) {
+    return null;
+  }
+  return {
+    ...report,
+    issues: [
+      ...(report?.issues || []),
+      ...forcedCodes.map((code) => ({
+        code,
+        severity: "blocker",
+        message: `Motion Brain forced AutoFix retry for ${code}.`,
+        source: "MotionQualityGate",
+      })),
+    ],
+  };
+}
+
+function getForcedMotionBrainAutoFixCodes(action = {}) {
+  const profile = action.validation_profile || action.subtype || action.action_type;
+  const codes = [];
+  if (action.action_type === "idle" || ["idle", "walk", "run", "breath"].includes(profile) || ["walk", "run", "breath"].includes(action.subtype)) {
+    codes.push("ARM_TOO_HIGH", "TPOSE_RESIDUE", "HAND_IK_UNEXPECTED", "NO_BODY_MOTION");
+    if (["walk", "run"].includes(profile) || ["walk", "run"].includes(action.subtype)) {
+      codes.push("ARM_SWING_PLANE_WRONG");
+    }
+  }
+  if (profile === "run" || action.subtype === "run") {
+    codes.push("RUN_MISSING_FLIGHT");
+  }
+  if (profile === "jump" || String(action.subtype || "").includes("jump")) {
+    codes.push("JUMP_MISSING_ANTICIPATION", "JUMP_MISSING_FLIGHT", "NO_BODY_MOTION");
+  }
+  if (profile === "attack" || action.action_type === "attack") {
+    codes.push("INTENT_NOT_FULFILLED", "ATTACK_MISSING_FOLLOW_THROUGH", "NO_BODY_MOTION");
+  }
+  if (["interaction", "object_manipulation"].includes(action.action_type) || profile === "interaction") {
+    codes.push("INTENT_NOT_FULFILLED", "CONTACT_LOCK_MISSING", "NO_BODY_MOTION");
+  }
+  if (action.action_type === "posture_transition") {
+    codes.push("INTENT_NOT_FULFILLED", "NO_BODY_MOTION");
+  }
+  return [...new Set(codes)];
 }
 
 function shouldRejectMotionBrainResultFromTimeline(result) {
@@ -7966,20 +8042,42 @@ function updateMotionBrainLoadButton() {
     && !hasLoadedMotionBrainTimeline
   );
   el.loadMotionBrainButton.disabled = !canLoad;
+  const autoFixAttempts = getMotionBrainAutoFixAttemptCount(result);
+  const autoFixed = hasMotionBrainAutoFixApplied(result);
   el.loadMotionBrainButton.textContent = !result
     ? "加载文字生成动作"
     : blocked
-      ? "自检未通过，不能加载"
+      ? autoFixAttempts > 0
+        ? `自动修正 ${autoFixAttempts} 次仍未通过`
+        : "自检未通过，不能加载"
       : hasLoadedMotionBrainTimeline
         ? "已加载到时间轴"
-        : "加载文字生成动作";
+        : autoFixed
+          ? "已自动修正，加载动作"
+          : "加载文字生成动作";
   el.loadMotionBrainButton.title = !result
     ? "先生成并自检一个文字动作"
     : blocked
-      ? "文字动作未通过自检，不能加载"
+      ? `Motion Brain 已自动尝试修正${autoFixAttempts || 0}次；仍有质量门阻塞问题，需要查看报告。`
       : hasLoadedMotionBrainTimeline
         ? "当前时间轴已经加载了这个文字动作"
         : "将已通过自检的文字动作写入时间轴";
+}
+
+function getMotionBrainAutoFixAttemptCount(result) {
+  if (!result) {
+    return 0;
+  }
+  const iterations = Array.isArray(result.auto_fix_iterations) ? result.auto_fix_iterations.length : 0;
+  const lastIteration = Number(result.autofix?.last_iteration);
+  return Math.max(iterations, Number.isFinite(lastIteration) ? lastIteration + 1 : 0, result.autofix?.applied ? 1 : 0);
+}
+
+function hasMotionBrainAutoFixApplied(result) {
+  return Boolean(
+    result?.autofix?.applied
+    || (result?.auto_fix_iterations || []).some((iteration) => iteration.applied),
+  );
 }
 
 function getCurrentMotionBrainTemplateOption() {
@@ -8030,10 +8128,13 @@ function renderMotionBrainPreview() {
   const criticIssues = (result.critic_report?.issues || []).map((issue) => issue.code);
   const validatorIssues = (result.final_pose_validation?.issues || result.validator?.issues || []).map((issue) => issue.code);
   const fulfillmentIssues = (result.intent_fulfillment_report?.issues || result.final_pose_validation?.intent_fulfillment?.issues || []).map((issue) => issue.code);
+  const blockerIssues = (result.quality_gate?.blockers || []).map((issue) => issue.code || issue.message);
+  const autoFixAttempts = getMotionBrainAutoFixAttemptCount(result);
+  const autoFixApplied = hasMotionBrainAutoFixApplied(result);
   const finalState = result.final_passed
     ? result.quality_gate?.severity === "warning"
       ? "accepted_with_warning"
-      : result.autofix?.applied
+      : autoFixApplied
         ? "auto_fixed"
         : "accepted"
     : result.quality_gate?.severity === "blocker"
@@ -8052,7 +8153,9 @@ function renderMotionBrainPreview() {
     `Critic: ${result.critic_report?.severity || "not run"} issues=${criticIssues.join(",") || "none"}`,
     `IntentFulfillment: ${result.intent_fulfillment_report?.status || result.final_pose_validation?.intent_fulfillment?.status || "not run"} issues=${fulfillmentIssues.join(",") || "none"}`,
     `Validator: ${result.final_pose_validation?.status || result.validator?.status || "Not run"} issues=${validatorIssues.join(",") || "none"}`,
-    `AutoFix: ${result.autofix?.applied ? result.autofix.fixes.join(", ") : "none"}`,
+    `AutoFix: ${autoFixApplied ? result.autofix?.fixes?.join(", ") || "applied" : result.final_passed === false ? "attempted/no safe fix" : "none"}`,
+    `AutoFix attempts: ${autoFixAttempts}`,
+    `Blockers: ${blockerIssues.join(",") || "none"}`,
     `Final: ${finalState}`,
     `Load: ${result.loaded_to_timeline ? "loaded" : result.final_passed === false || result.rejected_by_quality_gate ? "blocked" : "ready"}`,
   ];

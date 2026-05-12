@@ -36,6 +36,29 @@
   - Commit `4282b17 Fix hybrid IK FK wrist rotation`
   - Remote push PASS
 
+## Latest Update - 2026-05-12 Motion Brain AutoFix Gate
+
+- Fixed the Motion Brain self-check failure flow so it does not simply stop at a disabled load button.
+- Core pipeline change:
+  - `runMotionBrainQualityLoop()` now has a forced AutoFix retry path for clearly parsed, non-generic actions.
+  - If the critic/validator/quality gate still blocks an understood action, the pipeline converts common failure classes into fixable issue codes and re-runs AutoFix.
+  - Covered action families include idle/walk/run, jump, attack, interaction/object manipulation, and posture transitions.
+  - Low-confidence generic fallback still cannot be marked accepted; it remains needs-review by design.
+- UI/debug change:
+  - Passed after AutoFix shows `已自动修正，加载动作`.
+  - Failed after retries shows `自动修正 N 次仍未通过`.
+  - Motion Brain debug output now includes AutoFix attempts and blocker codes.
+- Regression coverage:
+  - The exact prompt `自然站立呼吸` must parse as idle/breath, pass after AutoFix, enable loading, and show `Load: ready`.
+- Latest validation:
+  - `node --check app.js`: PASS
+  - `node --check scripts\validate_demo_import.mjs`: PASS
+  - `npm run check`: PASS
+  - `npm run validate:import`: PASS
+- Logs:
+  - `artifacts/logs/npm_check_motion_brain_autofix_gate_20260512.log`
+  - `artifacts/logs/validate_motion_brain_autofix_gate_20260512.log`
+
 ## Latest Update - 2026-05-12 Walk Validation Identity
 
 - Fixed a false positive where `Walk_8F` could look correct but validation still showed `有问题` because `骨骼身份错误` reported `左右身份不匹配`.

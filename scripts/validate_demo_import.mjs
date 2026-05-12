@@ -1742,6 +1742,40 @@ async function validateMotionBrainPipeline() {
     previewTail: idlePreviewText?.split("\n").slice(-4),
   });
 
+  await page.locator("#motionBrainTextInput").fill("\u81ea\u7136\u7ad9\u7acb\u547c\u5438");
+  const beforeShortIdlePreviewCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.locator("#generateMotionBrainButton").click();
+  await page.waitForFunction(({ count }) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => (
+      entry.name === "preview_motion_from_text"
+      && entry.status === "success"
+    ));
+  }, { count: beforeShortIdlePreviewCount }, { timeout: 10000 });
+  const shortIdleResult = await page.evaluate(() => window.__motionDebug.getMotionBrainLastResult());
+  const shortIdleLoadButtonEnabled = await page.locator("#loadMotionBrainButton").isEnabled();
+  const shortIdleLoadButtonText = await page.locator("#loadMotionBrainButton").textContent();
+  const shortIdlePreviewText = await page.locator("#motionBrainResultPreview").textContent();
+  record("motion brain auto-fixes and enables loading for natural idle text without command prefix", Boolean(
+    shortIdleResult
+    && shortIdleResult.action_ir?.action_type === "idle"
+    && shortIdleResult.action_ir?.subtype === "breath"
+    && shortIdleResult.final_passed === true
+    && shortIdleResult.ready_to_load === true
+    && shortIdleLoadButtonEnabled
+    && !shortIdleLoadButtonText?.includes("\u672a\u901a\u8fc7")
+    && shortIdlePreviewText?.includes("AutoFix attempts:")
+    && shortIdlePreviewText?.includes("Load: ready")
+  ), {
+    finalPassed: shortIdleResult?.final_passed,
+    readyToLoad: shortIdleResult?.ready_to_load,
+    fixes: shortIdleResult?.autofix?.fixes,
+    attempts: shortIdleResult?.auto_fix_iterations?.length,
+    shortIdleLoadButtonEnabled,
+    shortIdleLoadButtonText,
+    previewTail: shortIdlePreviewText?.split("\n").slice(-5),
+  });
+
   const beforeUiPreviewState = await page.evaluate(() => window.__motionDebug.getMotionState());
   await page.locator("#motionBrainTextInput").fill("\u751f\u6210\u4e00\u4e2a\u7ffb\u6eda\u95ea\u907f");
   const beforePreviewCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
