@@ -2148,6 +2148,26 @@ async function importSampleGlbAndValidateToeFallback() {
     rightHand: sourceRigAfterWalk.mapped?.R_Hand?.current_world_position,
     leftHand: sourceRigAfterWalk.mapped?.L_Hand?.current_world_position,
   });
+  await executeCommandAndExpect("export_animated_glb", { download: false }, (state) => (
+    state.current_stage === "export"
+    && state.model === "Loaded"
+    && state.keyframes === 8
+  ));
+  const glbExportCommand = await getLastCommand("export_animated_glb");
+  const glbExportInfo = await page.evaluate(() => window.__motionDebug.getLastExportedGlbInfo());
+  const glbExportSummary = JSON.parse(await page.evaluate(() => window.__motionDebug.getExportedJson()));
+  record("animated GLB export bakes imported timeline into a binary GLB", (
+    glbExportCommand?.status === "success"
+    && glbExportCommand?.result?.bytes > 1024
+    && glbExportCommand?.result?.tracks > 0
+    && glbExportCommand?.result?.frames === 24
+    && glbExportInfo?.bytes === glbExportCommand.result.bytes
+    && glbExportSummary?.schema === "animated_glb_export_v1"
+  ), {
+    command: glbExportCommand,
+    info: glbExportInfo,
+    summary: glbExportSummary,
+  });
 }
 
 async function validateIncompleteMappingAssignmentSkeleton() {

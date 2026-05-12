@@ -6,6 +6,33 @@
 发布远端：`origin https://github.com/Siger1989/gugebangdign.git`
 当前发布分支：`main`
 
+## Latest Update - 2026-05-12 Animated GLB Export
+
+- Added a real `导出动画 GLB` export path for the adjusted imported character.
+- Current behavior:
+  - Export panel now has a `导出动画 GLB` button.
+  - New command: `export_animated_glb`.
+  - It requires an imported GLB, completed humanoid skeleton/bone mapping, and a source rig.
+  - When keyframes exist, it samples the current timeline frame by frame, drives the imported source skeleton, bakes bone position/quaternion tracks, and downloads a binary `.glb`.
+  - If there are no keyframes, it can still export the current static posed GLB.
+  - The existing export text box receives a small JSON summary with filename, byte size, frames, FPS, track count, and validation status.
+- Main files changed:
+  - `app.js`
+  - `index.html`
+  - `scripts/validate_demo_import.mjs`
+  - `CURRENT_STATE.md`
+- Regression coverage:
+  - Imported sample GLB -> bind skeleton -> create IK/FK -> load walk action -> `export_animated_glb` with `download:false`.
+  - Test checks the command succeeds, emits a binary buffer larger than 1 KB, has animation tracks, and writes `animated_glb_export_v1` summary.
+- Latest validation:
+  - `node --check app.js`: PASS
+  - `node --check scripts/validate_demo_import.mjs`: PASS
+  - `npm run check`: PASS
+  - `npm run validate:import`: PASS
+- Git publish:
+  - Commit `Add animated GLB export`
+  - Remote push PASS
+
 ## Latest Update - 2026-05-12 Motion Brain Scale-Aware Quality Gate
 
 - Fixed a global Motion Brain quality-loop false blocker on imported rigs.

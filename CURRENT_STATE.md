@@ -1,5 +1,69 @@
 # CURRENT_STATE
 
+## Cascadeur Pro Latest Install - 2026-05-12
+
+Current objective:
+- Install the latest official Cascadeur Windows build on drive D.
+- Use official Cascadeur sources only; Pro entitlement requires the user's Cascadeur account/license after launch.
+
+Current progress:
+- Official download page checked: latest build is `2026.1.2`, dated `30 Apr, 2026`, Windows build id `107`, size `372.93 MB`.
+- Official Windows CDN link resolved: `https://cdn.cascadeur.com/builds/windows/107/Cascadeur_2026.1.2.exe`.
+- D drive is available with sufficient free space.
+- Downloaded installer to `D:\Installers\Cascadeur\Cascadeur_2026.1.2.exe`.
+- Verified installer size `391048648`, SHA256 `3F8ED62C573CEE26B6D7597CF14BF728742553713E5D2BFCBC20126ACAE496A5`.
+- Verified Authenticode signature: `Valid`, signer `Nekki Limited`.
+- NSIS installer ignored `/D=...` and installed to `C:\Program Files\Cascadeur`; copied the complete verified install tree to `D:\Program Files\Cascadeur`.
+- Created current-user Start Menu shortcut: `Cascadeur 2026.1.2 (D Drive)` pointing to `D:\Program Files\Cascadeur\cascadeur.exe`.
+
+Files changed:
+- `CURRENT_STATE.md`
+
+Validation result: PASS.
+- `D:\Program Files\Cascadeur\cascadeur.exe` exists.
+- Product/File version: `2026.1.2.0.15343`.
+- Source and D-drive copy both contain `2809` items and `822088247` total file bytes.
+
+Next step:
+- Launch `Cascadeur 2026.1.2 (D Drive)` and sign in with a Cascadeur account that has Pro entitlement.
+
+## Export Animated GLB - 2026-05-12
+
+Current objective:
+- Add a real GLB export feature for the edited model and current motion.
+- Existing export only supports Motion JSON and binding presets.
+
+Current progress:
+- Started after user asked how to export the adjusted animated model as GLB, then requested adding that feature.
+- Implemented a minimal animated GLB exporter:
+  - Added `GLTFExporter` wiring.
+  - Added an export-panel button: `导出动画 GLB`.
+  - Added command `export_animated_glb`.
+  - The exporter samples the current timeline frame by frame, drives the imported source skeleton, bakes bone position/quaternion tracks, and downloads a binary `.glb`.
+  - Static GLB export is also supported when there are no keyframes.
+  - Export writes a JSON summary into the existing export text box for debug.
+
+Files changed:
+- `CURRENT_STATE.md`
+- `app.js`
+- `index.html`
+- `scripts/validate_demo_import.mjs`
+
+Validation result: PASS.
+- `node --check app.js`
+- `node --check scripts/validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import`
+- Verified `localhost:8780` and `localhost:8781` serve the new export button and new `app.js` version string.
+- Follow-up fix: exported animated GLB now resets the source rig to frame 1 before writing the file, so the GLB's default/static pose starts at the first frame instead of the last sampled frame.
+
+Git publish:
+- Commit `Add animated GLB export`.
+- Push to `origin/main`: PASS.
+
+Next step:
+- User can open the Export panel and click `导出动画 GLB` after importing/binding a GLB and creating or loading animation keyframes.
+
 ## Motion Brain Global Recovery Loop - 2026-05-12
 
 Current objective:

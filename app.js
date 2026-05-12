@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { MotionBrain } from "./motion_brain/motion_brain_pipeline.js";
 import { getActionPrimitives } from "./motion_brain/action_primitive_library.js";
 import { PoseSampler } from "./motion_brain/pose_sampler.js";
@@ -407,6 +408,7 @@ const COMMAND_SCHEMAS = {
   smooth_keyframes_between: { type: "object", properties: { from_frame: { type: "number" }, to_frame: { type: "number" } } },
   validate_motion: { type: "object", properties: {} },
   export_motion_json: { type: "object", properties: {} },
+  export_animated_glb: { type: "object", properties: { download: { type: "boolean" } } },
   import_motion_json: { type: "object", properties: { json: { type: "string" } } },
   export_binding_preset: { type: "object", properties: {} },
   import_binding_preset: { type: "object", properties: { json: { type: "string" } } },
@@ -517,6 +519,7 @@ const Runtime = {
   lastRenderedFrame: null,
   lastCommand: null,
   importedModelScene: null,
+  lastExportedGlb: null,
   sourceBoneById: new Map(),
   sourceBoneRestById: new Map(),
   draggingHumanoidJoint: null,
@@ -659,6 +662,7 @@ const el = {
   ikTargetZ: document.querySelector("#ikTargetZ"),
   keyframeList: document.querySelector("#keyframeList"),
   motionJsonText: document.querySelector("#motionJsonText"),
+  exportGlbButton: document.querySelector("#exportGlbButton"),
   exportBindingPresetButton: document.querySelector("#exportBindingPresetButton"),
   importBindingPresetButton: document.querySelector("#importBindingPresetButton"),
   loopToggle: document.querySelector("#loopToggle"),
@@ -827,6 +831,9 @@ function bindUi() {
   });
   document.querySelector("#exportJsonButton").addEventListener("click", () => {
     executeCommand(createCommand("export_motion_json"));
+  });
+  el.exportGlbButton?.addEventListener("click", () => {
+    executeCommand(createCommand("export_animated_glb", { download: true }));
   });
   document.querySelector("#importJsonButton").addEventListener("click", () => {
     executeCommand(createCommand("import_motion_json", { json: el.motionJsonText.value }));
@@ -2148,6 +2155,62 @@ const COMMAND_EXECUTORS = {
     return { message: "已导出动作 JSON", bytes: MotionState.exported_json.length };
   },
 
+  export_animated_glb: async ({ download = true } = {}) => {
+    requireAnimatedGlbExportReady();
+    let auto_validated = false;
+    if (MotionState.keyframes.length > 0 && MotionState.validation_report.status !== "Passed") {
+      MotionState.validation_report = buildValidationReport();
+      auto_validated = true;
+    }
+    const snapshot = snapshotCoreState();
+    const hasAnimation = MotionState.keyframes.length > 0;
+    const clip = hasAnimation ? bakeCurrentTimelineToSourceRigClip() : null;
+    if (clip) {
+      applyPoseAtFrame(1);
+    }
+    let buffer = null;
+    try {
+      buffer = await exportImportedSceneToGlb(clip ? [clip] : []);
+    } finally {
+      restoreCoreState(snapshot);
+      applyPoseAtFrame(snapshot.current_frame || 1);
+    }
+    const filename = buildAnimatedGlbFilename();
+    const bytes = getArrayBufferByteLength(buffer);
+    const summary = {
+      schema: "animated_glb_export_v1",
+      exported_at: new Date().toISOString(),
+      filename,
+      model_source: MotionState.model.source,
+      animated: Boolean(clip),
+      frames: clip?.userData?.frames || 0,
+      fps: MotionState.playback_fps,
+      tracks: clip?.tracks?.length || 0,
+      bytes,
+      validation_status: MotionState.validation_report.status,
+      auto_validated,
+    };
+    Runtime.lastExportedGlb = {
+      ...summary,
+      buffer,
+    };
+    MotionState.exported_json = JSON.stringify(summary, null, 2);
+    MotionState.dirty_state = false;
+    Runtime.stage = "export";
+    if (download) {
+      downloadArrayBuffer(buffer, filename, "model/gltf-binary");
+    }
+    return {
+      message: clip ? "已导出动画 GLB" : "已导出静态 GLB",
+      filename,
+      bytes,
+      frames: summary.frames,
+      fps: summary.fps,
+      tracks: summary.tracks,
+      validation_status: summary.validation_status,
+    };
+  },
+
   export_binding_preset: async () => {
     requireHumanoidSkeleton();
     const sourceBoneNameByJoint = {};
@@ -2635,6 +2698,7 @@ function isUndoableCommand(name) {
     "smooth_keyframes_between",
     "validate_motion",
     "export_motion_json",
+    "export_animated_glb",
     "import_motion_json",
     "export_binding_preset",
     "import_binding_preset",
@@ -2692,6 +2756,165 @@ function restoreCoreState(snapshot) {
   applyImportedModelAlignment();
   syncSourceRigToMotionState();
   syncEndEffectorControlsToJoints();
+}
+
+function requireAnimatedGlbExportReady() {
+  if (!Runtime.importedModelScene || !MotionState.model.loaded) {
+    throw new Error("需要先导入 GLB 模型，才能导出动画 GLB");
+  }
+  if (Runtime.sourceBoneById.size === 0 || MotionState.source_bones.length === 0) {
+    throw new Error("当前 GLB 没有可导出的骨骼");
+  }
+  if (!MotionState.skeleton || MotionState.joints.length === 0) {
+    throw new Error("需要先完成骨骼识别/绑定，再导出动画 GLB");
+  }
+  if (getMappingCount() === 0) {
+    throw new Error("需要先绑定人形骨骼映射，再导出动画 GLB");
+  }
+}
+
+function bakeCurrentTimelineToSourceRigClip() {
+  const bones = getSourceBonesInExportOrder();
+  if (bones.length === 0) {
+    throw new Error("当前 GLB 没有可写入动画的骨骼");
+  }
+  const fps = Math.max(1, Number(MotionState.playback_fps) || 24);
+  const totalFrames = Math.max(1, Math.min(TIMELINE_MAX_VISIBLE_FRAMES, Math.round(MotionState.total_frames || 1)));
+  const times = [];
+  const positionsByBone = new Map(bones.map((bone) => [bone.uuid, []]));
+  const quaternionsByBone = new Map(bones.map((bone) => [bone.uuid, []]));
+  const scalesByBone = new Map(bones.map((bone) => [bone.uuid, []]));
+  for (let frame = 1; frame <= totalFrames; frame += 1) {
+    applyPoseAtFrame(frame);
+    Runtime.importedModelScene.updateMatrixWorld(true);
+    times.push((frame - 1) / fps);
+    bones.forEach((bone) => {
+      positionsByBone.get(bone.uuid).push(bone.position.x, bone.position.y, bone.position.z);
+      quaternionsByBone.get(bone.uuid).push(bone.quaternion.x, bone.quaternion.y, bone.quaternion.z, bone.quaternion.w);
+      scalesByBone.get(bone.uuid).push(bone.scale.x, bone.scale.y, bone.scale.z);
+    });
+  }
+  const tracks = [];
+  bones.forEach((bone) => {
+    tracks.push(new THREE.VectorKeyframeTrack(`${bone.uuid}.position`, times, positionsByBone.get(bone.uuid)));
+    tracks.push(new THREE.QuaternionKeyframeTrack(`${bone.uuid}.quaternion`, times, quaternionsByBone.get(bone.uuid)));
+    if (sourceBoneUsesAnimatedScale(scalesByBone.get(bone.uuid))) {
+      tracks.push(new THREE.VectorKeyframeTrack(`${bone.uuid}.scale`, times, scalesByBone.get(bone.uuid)));
+    }
+  });
+  const clip = new THREE.AnimationClip(buildAnimationClipName(), -1, tracks);
+  clip.userData = {
+    frames: totalFrames,
+    fps,
+    bones: bones.length,
+  };
+  return clip;
+}
+
+function getSourceBonesInExportOrder() {
+  const ordered = [];
+  const seen = new Set();
+  MotionState.source_bones.forEach((sourceBone) => {
+    const bone = Runtime.sourceBoneById.get(sourceBone.id);
+    if (bone && !seen.has(bone.uuid)) {
+      seen.add(bone.uuid);
+      ordered.push(bone);
+    }
+  });
+  if (ordered.length > 0) {
+    return ordered;
+  }
+  Runtime.sourceBoneById.forEach((bone) => {
+    if (!seen.has(bone.uuid)) {
+      seen.add(bone.uuid);
+      ordered.push(bone);
+    }
+  });
+  return ordered;
+}
+
+function sourceBoneUsesAnimatedScale(values = []) {
+  if (values.length < 6) {
+    return false;
+  }
+  const base = values.slice(0, 3);
+  for (let index = 3; index < values.length; index += 3) {
+    if (
+      Math.abs(values[index] - base[0]) > 0.00001
+      || Math.abs(values[index + 1] - base[1]) > 0.00001
+      || Math.abs(values[index + 2] - base[2]) > 0.00001
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function buildAnimationClipName() {
+  const subtype = MotionState.motion_brain?.last_result?.action_ir?.subtype
+    || MotionState.motion_brain?.last_result?.action_intent?.subtype
+    || "EditedMotion";
+  return sanitizeFileStem(subtype || "EditedMotion");
+}
+
+function buildAnimatedGlbFilename() {
+  const modelName = sanitizeFileStem(MotionState.model.source || "model");
+  const clipName = sanitizeFileStem(buildAnimationClipName());
+  return `${modelName}_${clipName}.glb`;
+}
+
+function sanitizeFileStem(value) {
+  const stem = String(value || "motion")
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+  return stem || "motion";
+}
+
+async function exportImportedSceneToGlb(animations) {
+  const exporter = new GLTFExporter();
+  const result = await exporter.parseAsync(Runtime.importedModelScene, {
+    binary: true,
+    animations,
+    onlyVisible: false,
+    trs: true,
+    truncateDrawRange: true,
+  });
+  if (result instanceof ArrayBuffer) {
+    return result;
+  }
+  if (ArrayBuffer.isView(result)) {
+    return result.buffer.slice(result.byteOffset, result.byteOffset + result.byteLength);
+  }
+  if (typeof result === "string") {
+    return new TextEncoder().encode(result).buffer;
+  }
+  throw new Error("GLB 导出失败：导出器没有返回二进制数据");
+}
+
+function getArrayBufferByteLength(buffer) {
+  if (buffer instanceof ArrayBuffer) {
+    return buffer.byteLength;
+  }
+  if (ArrayBuffer.isView(buffer)) {
+    return buffer.byteLength;
+  }
+  return 0;
+}
+
+function downloadArrayBuffer(buffer, filename, mimeType) {
+  const blob = new Blob([buffer], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function getSelectedControlIds() {
@@ -8722,6 +8945,7 @@ function translateCommandName(name) {
     smooth_keyframes_between: "平滑关键帧段",
     validate_motion: "验证动作",
     export_motion_json: "导出动作 JSON",
+    export_animated_glb: "导出动画 GLB",
     import_motion_json: "导入动作 JSON",
     export_binding_preset: "导出绑定预设",
     import_binding_preset: "导入绑定预设",
@@ -11074,6 +11298,10 @@ function installDebugApi() {
     getCommandLog: () => deepClone(MotionState.command_log),
     getValidationReport: () => deepClone(MotionState.validation_report),
     getExportedJson: () => MotionState.exported_json,
+    getLastExportedGlbInfo: () => Runtime.lastExportedGlb ? deepClone({
+      ...Runtime.lastExportedGlb,
+      buffer: undefined,
+    }) : null,
     getTransformValueBoxState,
     getTimelineViewState,
     getTransformGizmoDebug,
