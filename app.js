@@ -7943,18 +7943,29 @@ function updateMotionBrainLoadButton() {
     return;
   }
   const result = MotionState.motion_brain?.last_result;
+  const hasLoadedMotionBrainTimeline = Boolean(
+    result?.loaded_to_timeline === true
+    && MotionState.keyframes.some((keyframe) => keyframe.motion_brain),
+  );
+  const blocked = Boolean(result?.final_passed === false || result?.rejected_by_quality_gate);
   const canLoad = Boolean(
     result
-    && result.final_passed !== false
-    && !result.rejected_by_quality_gate
-    && result.loaded_to_timeline !== true
+    && !blocked
+    && !hasLoadedMotionBrainTimeline
   );
   el.loadMotionBrainButton.disabled = !canLoad;
+  el.loadMotionBrainButton.textContent = !result
+    ? "加载文字生成动作"
+    : blocked
+      ? "自检未通过，不能加载"
+      : hasLoadedMotionBrainTimeline
+        ? "已加载到时间轴"
+        : "加载文字生成动作";
   el.loadMotionBrainButton.title = !result
     ? "先生成并自检一个文字动作"
-    : result.final_passed === false || result.rejected_by_quality_gate
+    : blocked
       ? "文字动作未通过自检，不能加载"
-      : result.loaded_to_timeline === true
+      : hasLoadedMotionBrainTimeline
         ? "当前时间轴已经加载了这个文字动作"
         : "将已通过自检的文字动作写入时间轴";
 }
@@ -8031,6 +8042,7 @@ function renderMotionBrainPreview() {
     `Validator: ${result.final_pose_validation?.status || result.validator?.status || "Not run"} issues=${validatorIssues.join(",") || "none"}`,
     `AutoFix: ${result.autofix?.applied ? result.autofix.fixes.join(", ") : "none"}`,
     `Final: ${finalState}`,
+    `Load: ${result.loaded_to_timeline ? "loaded" : result.final_passed === false || result.rejected_by_quality_gate ? "blocked" : "ready"}`,
   ];
   el.motionBrainResultPreview.textContent = lines.join("\n");
 }

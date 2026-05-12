@@ -6,6 +6,29 @@
 发布远端：`origin https://github.com/Siger1989/gugebangdign.git`
 当前发布分支：`main`
 
+## Latest Update - 2026-05-12 Motion Brain Load Button
+
+- Fixed the Motion Brain load button staying disabled after text generation.
+- The load button now only treats a result as already loaded when the current timeline actually contains Motion Brain keyframes.
+- Button text now explains the state:
+  - `加载文字生成动作`
+  - `自检未通过，不能加载`
+  - `已加载到时间轴`
+- The debug preview now includes `Load: ready`, `Load: blocked`, or `Load: loaded`.
+- Added regression coverage for the default text input `生成一个自然站立呼吸`:
+  - Parses as `idle/breath`.
+  - Passes the quality gate.
+  - Sets `ready_to_load=true`.
+  - Enables the load button.
+- Latest validation:
+  - `node --check app.js`: PASS
+  - `node --check scripts\validate_demo_import.mjs`: PASS
+  - `npm run check`: PASS
+  - `npm run validate:import`: PASS
+- Logs:
+  - `artifacts/logs/npm_check_motion_brain_load_button_20260512.log`
+  - `artifacts/logs/validate_motion_brain_load_button_20260512.log`
+
 ## Latest Update - 2026-05-12 R View Hand Rotation
 
 - Fixed the persistent `R VIEW` hand/palm flip:

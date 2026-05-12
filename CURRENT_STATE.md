@@ -1,5 +1,51 @@
 # CURRENT_STATE
 
+## Motion Brain Load Button Disabled State Fix - 2026-05-12
+
+Current objective:
+- Fix the UI issue where `加载文字生成动作` could stay disabled after generating a text motion, leaving the user unable to load the generated result.
+
+Current progress:
+- Reproduced the button state path and checked the real disable reasons:
+  - A failed/uncertain Motion Brain result should stay blocked.
+  - A passed preview result should be loadable.
+  - A result should only be treated as "already loaded" if the current timeline actually contains Motion Brain keyframes.
+- Updated `updateMotionBrainLoadButton()`:
+  - Uses `hasLoadedMotionBrainTimeline` instead of only trusting `result.loaded_to_timeline`.
+  - Keeps the button enabled for a passed preview even if a previous Motion Brain timeline existed.
+  - Changes button text by state:
+    - `加载文字生成动作`
+    - `自检未通过，不能加载`
+    - `已加载到时间轴`
+- Added `Load: ready / blocked / loaded` to the Motion Brain debug preview.
+- Added regression coverage for the exact default input:
+  - `生成一个自然站立呼吸`
+  - Must parse as `idle/breath`.
+  - Must pass quality gate.
+  - Must leave `ready_to_load=true`.
+  - Must enable the load button and show `Load: ready`.
+
+Files changed:
+- `CURRENT_STATE.md`
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+
+Validation result: PASS.
+
+Commands run:
+- `node --check app.js`: PASS
+- `node --check scripts\validate_demo_import.mjs`: PASS
+- `npm run check`: PASS
+- `npm run validate:import`: PASS
+
+Validation details:
+- Full validation log: `artifacts/logs/validate_motion_brain_load_button_20260512.log`
+- NPM check log: `artifacts/logs/npm_check_motion_brain_load_button_20260512.log`
+- Acceptance screenshot: `artifacts/screenshots/pipeline_acceptance_20260512_030120Z.png`
+
+Current blocking issue:
+- Need sync to publish repo and push.
+
 ## R View Hand Palm Flip Fix - 2026-05-12
 
 Current objective:

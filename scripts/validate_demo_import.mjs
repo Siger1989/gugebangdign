@@ -1551,6 +1551,41 @@ async function validateMotionBrainPipeline() {
     })),
   });
 
+  await page.locator("#motionBrainTextInput").fill("\u751f\u6210\u4e00\u4e2a\u81ea\u7136\u7ad9\u7acb\u547c\u5438");
+  const beforeIdlePreviewCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.locator("#generateMotionBrainButton").click();
+  await page.waitForFunction(({ count }) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => (
+      entry.name === "preview_motion_from_text"
+      && entry.status === "success"
+    ));
+  }, { count: beforeIdlePreviewCount }, { timeout: 10000 });
+  const idleUiResult = await page.evaluate(() => window.__motionDebug.getMotionBrainLastResult());
+  const idleLoadButtonEnabled = await page.locator("#loadMotionBrainButton").isEnabled();
+  const idleLoadButtonText = await page.locator("#loadMotionBrainButton").textContent();
+  const idlePreviewText = await page.locator("#motionBrainResultPreview").textContent();
+  record("motion brain UI enables loading for default idle breath preview", Boolean(
+    idleUiResult
+    && idleUiResult.action_ir?.action_type === "idle"
+    && idleUiResult.action_ir?.subtype === "breath"
+    && idleUiResult.final_passed === true
+    && idleUiResult.ready_to_load === true
+    && idleUiResult.loaded_to_timeline === false
+    && idleLoadButtonEnabled
+    && idleLoadButtonText?.includes("\u52a0\u8f7d")
+    && idlePreviewText?.includes("Load: ready")
+  ), {
+    actionType: idleUiResult?.action_ir?.action_type,
+    subtype: idleUiResult?.action_ir?.subtype,
+    finalPassed: idleUiResult?.final_passed,
+    readyToLoad: idleUiResult?.ready_to_load,
+    loadedToTimeline: idleUiResult?.loaded_to_timeline,
+    idleLoadButtonEnabled,
+    idleLoadButtonText,
+    previewTail: idlePreviewText?.split("\n").slice(-4),
+  });
+
   const beforeUiPreviewState = await page.evaluate(() => window.__motionDebug.getMotionState());
   await page.locator("#motionBrainTextInput").fill("\u751f\u6210\u4e00\u4e2a\u7ffb\u6eda\u95ea\u907f");
   const beforePreviewCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
