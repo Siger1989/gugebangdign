@@ -39,7 +39,13 @@ Validation details:
 - Acceptance screenshot: `artifacts/screenshots/pipeline_acceptance_20260512_041854Z.png`
 
 Current blocking issue:
-- Need sync to publish repo and push.
+- None.
+
+Git publish:
+- Publish repo: `E:\codex骨骼软件_github_publish`
+- Branch: `main`
+- Commit: `e37551e Make Motion Brain autofix gate explicit`
+- Remote push: PASS.
 
 ## IK/FK Hybrid Wrist Rotation Interference - 2026-05-12
 
