@@ -6019,15 +6019,26 @@ function buildValidationReport() {
   const identityHips = identityJoints.find((joint) => joint.name === "Hips")?.position || getRestPosition("Hips");
   const hips = new THREE.Vector3().fromArray(identityHips);
   const sideTolerance = basis.scale * 0.035;
-  const rightIdentityError = identityJoints.some((joint) => (
-    joint.name.startsWith("R_")
-    && new THREE.Vector3().fromArray(joint.position).sub(hips).dot(basis.right) < -sideTolerance
-  ));
-  const leftIdentityError = identityJoints.some((joint) => (
-    joint.name.startsWith("L_")
-    && new THREE.Vector3().fromArray(joint.position).sub(hips).dot(basis.right) > sideTolerance
-  ));
-  if (rightIdentityError || leftIdentityError) {
+  const sideSamples = identityJoints
+    .filter((joint) => /^(R_|L_)/.test(joint.name))
+    .map((joint) => ({
+      side: joint.name.startsWith("R_") ? "R" : "L",
+      signed: new THREE.Vector3().fromArray(joint.position).sub(hips).dot(basis.right),
+    }))
+    .filter((sample) => Math.abs(sample.signed) > sideTolerance);
+  const rightSamples = sideSamples.filter((sample) => sample.side === "R");
+  const leftSamples = sideSamples.filter((sample) => sample.side === "L");
+  const rightMean = rightSamples.reduce((sum, sample) => sum + sample.signed, 0) / Math.max(rightSamples.length, 1);
+  const leftMean = leftSamples.reduce((sum, sample) => sum + sample.signed, 0) / Math.max(leftSamples.length, 1);
+  const hasConsistentOppositeSides = rightSamples.length > 0
+    && leftSamples.length > 0
+    && Math.abs(rightMean - leftMean) > sideTolerance * 2
+    && rightMean * leftMean < 0;
+  const mixedRightSide = hasConsistentOppositeSides
+    && rightSamples.some((sample) => Math.sign(sample.signed) !== Math.sign(rightMean));
+  const mixedLeftSide = hasConsistentOppositeSides
+    && leftSamples.some((sample) => Math.sign(sample.signed) !== Math.sign(leftMean));
+  if (!hasConsistentOppositeSides || mixedRightSide || mixedLeftSide) {
     checks.bone_identity_error = "Left/right identity mismatch";
     issues.push({ code: "bone_identity_error", message: "左右关节身份与固定侧向位置不匹配" });
   }

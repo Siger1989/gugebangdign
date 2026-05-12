@@ -298,6 +298,15 @@ try {
     && validation?.checks?.loop_discontinuity
     && validation?.checks?.bone_identity_error
   ), validation);
+  record("walk validation does not fail just because the rig side axis is mirrored", Boolean(
+    validation?.status === "Passed"
+    && validation?.checks?.bone_identity_error === "Passed"
+    && !(validation?.issues || []).some((issue) => issue.code === "bone_identity_error")
+  ), {
+    status: validation?.status,
+    boneIdentity: validation?.checks?.bone_identity_error,
+    issues: validation?.issues,
+  });
 
   await clickAndExpect("#toolbarExportButton", "export_motion_json", () => true);
   const exported = await page.evaluate(() => window.__motionDebug.getExportedJson());
@@ -1855,6 +1864,16 @@ async function importSampleGlbAndValidateToeFallback() {
   });
   await page.locator("#motionTemplateSelect").selectOption("walk_cycle_8f");
   await clickAndExpect("#applyWalkButton", "apply_motion_template", (state) => state.keyframes === 8 && state.direction?.confirmed === true);
+  await executeCommandAndExpect("validate_motion", {}, (state) => state.validation === "Passed");
+  const importedWalkValidation = await page.evaluate(() => window.__motionDebug.getValidationReport());
+  record("imported GLB walk validation accepts either left/right side sign convention", Boolean(
+    importedWalkValidation?.status === "Passed"
+    && importedWalkValidation?.checks?.bone_identity_error === "Passed"
+  ), {
+    status: importedWalkValidation?.status,
+    boneIdentity: importedWalkValidation?.checks?.bone_identity_error,
+    issues: importedWalkValidation?.issues,
+  });
   const importedWalkState = await page.evaluate(() => window.__motionDebug.getMotionState());
   record("sample GLB walk keeps hands on their own sides", walkHandsStayOnOwnSides(importedWalkState), {
     keyframes: importedWalkState.keyframes?.length,

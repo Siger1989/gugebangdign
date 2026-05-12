@@ -6,6 +6,25 @@
 发布远端：`origin https://github.com/Siger1989/gugebangdign.git`
 当前发布分支：`main`
 
+## Latest Update - 2026-05-12 Walk Validation Identity
+
+- Fixed a false positive where `Walk_8F` could look correct but validation still showed `有问题` because `骨骼身份错误` reported `左右身份不匹配`.
+- The old rule assumed a fixed side-axis sign: `R_` must be positive rig-right and `L_` must be negative rig-right.
+- Imported rigs and confirmed facing direction can flip that sign while still being internally correct.
+- The validator now checks consistency instead:
+  - all `R_` joints must be on one side;
+  - all `L_` joints must be on the opposite side;
+  - either sign convention is accepted.
+- Regression coverage added for normal walk and imported GLB walk validation.
+- Latest validation:
+  - `node --check app.js`: PASS
+  - `node --check scripts\validate_demo_import.mjs`: PASS
+  - `npm run check`: PASS
+  - `npm run validate:import`: PASS
+- Logs:
+  - `artifacts/logs/npm_check_walk_identity_validation_20260512.log`
+  - `artifacts/logs/validate_walk_identity_validation_20260512.log`
+
 ## Latest Update - 2026-05-12 Motion Brain Load Button
 
 - Fixed the Motion Brain load button staying disabled after text generation.

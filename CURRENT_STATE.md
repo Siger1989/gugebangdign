@@ -1,5 +1,45 @@
 # CURRENT_STATE
 
+## Walk Identity Validation False Positive Fix - 2026-05-12
+
+Current objective:
+- Explain and fix why `Walk_8F` can look visually normal but validation still reports `有问题 / 骨骼身份错误 / 左右身份不匹配`.
+
+Current progress:
+- Diagnosis:
+  - The visible walk was not failing foot sliding, knee flip, or loop continuity.
+  - The failing item was `bone_identity_error`.
+  - The old identity check assumed `R_` joints must always project to positive rig-right and `L_` joints to negative rig-right.
+  - Imported rigs or confirmed facing direction can flip that side-axis sign even while the skeleton is internally correct.
+- Fixed `buildValidationReport()`:
+  - It now checks whether all `R_` joints are consistently on one side and all `L_` joints are consistently on the opposite side.
+  - It no longer hard-codes which sign is right or left.
+  - It still fails if R/L joints are mixed onto the same side or one side cannot be determined.
+- Added regression coverage:
+  - Walk validation must pass without `bone_identity_error`.
+  - Imported GLB walk validation accepts either left/right side sign convention.
+
+Files changed:
+- `CURRENT_STATE.md`
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+
+Validation result: PASS.
+
+Commands run:
+- `node --check app.js`: PASS
+- `node --check scripts\validate_demo_import.mjs`: PASS
+- `npm run check`: PASS
+- `npm run validate:import`: PASS
+
+Validation details:
+- Full validation log: `artifacts/logs/validate_walk_identity_validation_20260512.log`
+- NPM check log: `artifacts/logs/npm_check_walk_identity_validation_20260512.log`
+- Acceptance screenshot: `artifacts/screenshots/pipeline_acceptance_20260512_031446Z.png`
+
+Current blocking issue:
+- Need sync to publish repo and push.
+
 ## Motion Brain Load Button Disabled State Fix - 2026-05-12
 
 Current objective:
