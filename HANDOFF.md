@@ -6,6 +6,26 @@
 发布远端：`origin https://github.com/Siger1989/gugebangdign.git`
 当前发布分支：`main`
 
+## Latest Update - 2026-05-12 R Axis Rotate Direction
+
+- Fixed `R + X/Y/Z` explicit-axis mouse rotation feeling reversed.
+- Root cause:
+  - View-axis `R` rotation and explicit-axis `R X/Y/Z` rotation use separate pointer-to-angle formulas.
+  - The explicit-axis path projected the axis to screen space but multiplied the mouse projection by a negative sign.
+- Current behavior:
+  - Dragging along the visible chosen axis now increases the same-direction rotation value instead of reversing it.
+  - View-axis rotation is unchanged.
+- Regression coverage:
+  - Select `COG_CTRL`, press `R`, then `X`, drag along the projected X axis, and require a positive `R X` numeric value plus positive committed X rotation.
+- Latest validation:
+  - `node --check app.js`: PASS
+  - `node --check scripts/validate_demo_import.mjs`: PASS
+  - `npm run check`: PASS
+  - `npm run validate:import`: PASS
+- Git publish:
+  - Published commit `Fix explicit-axis rotate direction`
+  - Remote push PASS
+
 ## Latest Update - 2026-05-12 Animated GLB Export
 
 - Added a real `导出动画 GLB` export path for the adjusted imported character.
@@ -30,7 +50,7 @@
   - `npm run check`: PASS
   - `npm run validate:import`: PASS
 - Git publish:
-  - Commit `Add animated GLB export`
+  - Commit `627ff03 Add animated GLB export`
   - Remote push PASS
 
 ## Latest Update - 2026-05-12 Motion Brain Scale-Aware Quality Gate

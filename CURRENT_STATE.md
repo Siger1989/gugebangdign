@@ -1,5 +1,41 @@
 # CURRENT_STATE
 
+## R Axis Rotate Direction - 2026-05-12
+
+Current objective:
+- Fix `R + X/Y/Z` explicit-axis mouse rotation feeling reversed.
+
+Current progress:
+- Root cause found in axis-constrained rotation conversion:
+  - View-axis `R` rotation uses its own pointer delta formula.
+  - Explicit axis rotation projected the chosen world/local axis to screen space, then multiplied mouse movement by a negative sign.
+  - That made dragging along the visible axis produce the opposite angle.
+- Implemented:
+  - Removed the reversed sign for explicit-axis rotate accumulation.
+  - Updated the fallback constrained-rotation path to match.
+  - Added a debug helper for projected transform axis vectors.
+  - Added regression coverage: `R`, then `X`, then drag along the projected X axis must show a positive `R X` value and commit a positive X rotation.
+  - Updated `index.html` app version query so the browser pulls the new module.
+
+Files changed:
+- `app.js`
+- `index.html`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Validation result: PASS.
+- `node --check app.js`
+- `node --check scripts/validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import`
+
+Git publish:
+- Published commit `Fix explicit-axis rotate direction`.
+- Push to `origin/main`: PASS.
+
+Next step:
+- User can refresh the app and use `R + X/Y/Z`; dragging along the chosen axis should no longer feel reversed.
+
 ## Cascadeur Pro Latest Install - 2026-05-12
 
 Current objective:
@@ -58,7 +94,7 @@ Validation result: PASS.
 - Follow-up fix: exported animated GLB now resets the source rig to frame 1 before writing the file, so the GLB's default/static pose starts at the first frame instead of the last sampled frame.
 
 Git publish:
-- Commit `Add animated GLB export`.
+- Commit `627ff03 Add animated GLB export`.
 - Push to `origin/main`: PASS.
 
 Next step:

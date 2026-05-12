@@ -10239,9 +10239,9 @@ function updateTransformRotateAccumulator(previousPointer, currentPointer) {
     const axis = getTransformAxisVector(axisName, subject?.control_id);
     const screenAxis = getProjectedAxisScreenVector(axis);
     if (screenAxis.length() > 0.001) {
-      angleDelta = -delta.dot(screenAxis.normalize()) * 0.012;
+      angleDelta = delta.dot(screenAxis.normalize()) * 0.012;
     } else {
-      angleDelta = (Math.abs(delta.x) >= Math.abs(delta.y) ? -delta.x : delta.y) * 0.012;
+      angleDelta = (Math.abs(delta.x) >= Math.abs(delta.y) ? delta.x : -delta.y) * 0.012;
     }
   } else {
     angleDelta = getViewAxisRotationDeltaFromPointerDelta(delta);
@@ -10445,9 +10445,9 @@ function getConstrainedRotationAngle(axis, dx, dy) {
   const screenAxis = getProjectedAxisScreenVector(axis);
   if (screenAxis.length() > 0.001) {
     const pointer = new THREE.Vector2(dx, dy);
-    return -pointer.dot(screenAxis.normalize()) * 0.012;
+    return pointer.dot(screenAxis.normalize()) * 0.012;
   }
-  return (Math.abs(dx) >= Math.abs(dy) ? -dx : dy) * 0.012;
+  return (Math.abs(dx) >= Math.abs(dy) ? dx : -dy) * 0.012;
 }
 
 function getViewPlaneRotationAngle(subject, event, dx, dy) {
@@ -11305,6 +11305,7 @@ function installDebugApi() {
     getTransformValueBoxState,
     getTimelineViewState,
     getTransformGizmoDebug,
+    getTransformAxisScreenVectors,
     getSourceRigDebug,
     getSourceBoneWorldPositions: () => MotionState.source_bones.map((bone) => ({
       id: bone.id,
@@ -11342,6 +11343,21 @@ function getTransformGizmoDebug() {
     active_axis: MotionState.transform.axis || null,
     active_transform_mode: Runtime.transformMode || null,
   };
+}
+
+function getTransformAxisScreenVectors() {
+  const controls = getSelectedTransformControls(Runtime.transformMode || MotionState.transform.tool);
+  const subject = Runtime.transformSubject || (controls.length ? createTransformSubjectForControls(controls) : null);
+  const controlId = subject?.control_id || MotionState.selected_control || null;
+  return Object.fromEntries(["x", "y", "z"].map((axisName) => {
+    const axis = getTransformAxisVector(axisName, controlId);
+    const screen = getProjectedAxisScreenVector(axis);
+    return [axisName, {
+      world: axis.toArray(),
+      screen: screen.toArray(),
+      length: screen.length(),
+    }];
+  }));
 }
 
 function getMotionStateSummary() {

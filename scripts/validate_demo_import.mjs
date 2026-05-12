@@ -1333,6 +1333,7 @@ async function validateZBrushTransformGizmoModes() {
     && rotateDebug.axis_keys.includes("z")
     && rotateDebug.axis_keys.includes("view")
   ), rotateDebug);
+  await validateAxisRotateMouseDirection();
 
   await page.locator('[data-tool="scale"]').click();
   const scaleDebug = await page.evaluate(() => window.__motionDebug.getTransformGizmoDebug());
@@ -1346,6 +1347,60 @@ async function validateZBrushTransformGizmoModes() {
   ), scaleDebug);
 
   await page.locator('[data-tool="select"]').click();
+}
+
+async function validateAxisRotateMouseDirection() {
+  await executeCommandAndExpect("select_control", { control: "COG_CTRL" }, (state) => state.selected_control === "COG_CTRL");
+  const control = await page.evaluate(() => (
+    window.__motionDebug.getIkControlScreenPositions().find((item) => item.id === "COG_CTRL" && item.visible)
+  ));
+  record("R axis mouse direction regression control visible", Boolean(control), control);
+  if (!control) {
+    return;
+  }
+  const beforeRotateCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.mouse.move(control.x + 58, control.y + 18);
+  await page.locator("#rigCanvas").focus();
+  await page.keyboard.press("r");
+  await page.keyboard.press("x");
+  const axisDebug = await page.evaluate(() => window.__motionDebug.getTransformAxisScreenVectors().x);
+  const axisLength = Math.hypot(axisDebug?.screen?.[0] || 0, axisDebug?.screen?.[1] || 0);
+  record("R X axis has a projected mouse direction", axisLength > 0.001, axisDebug);
+  if (axisLength <= 0.001) {
+    await page.keyboard.press("Escape");
+    return;
+  }
+  const direction = [
+    axisDebug.screen[0] / axisLength,
+    axisDebug.screen[1] / axisLength,
+  ];
+  await page.mouse.move(control.x + 58 + direction[0] * 4, control.y + 18 + direction[1] * 4, { steps: 1 });
+  await page.mouse.move(control.x + 58 + direction[0] * 84, control.y + 18 + direction[1] * 84, { steps: 8 });
+  const valueBox = await page.evaluate(() => window.__motionDebug.getTransformValueBoxState());
+  record("R plus explicit X axis follows mouse direction instead of reversing it", (
+    valueBox.visible === true
+    && valueBox.label === "R X"
+    && valueBox.numeric_value > 10
+  ), {
+    axisDebug,
+    valueBox,
+  });
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(({ count }) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => (
+      entry.name === "set_control_transforms"
+      && entry.status === "success"
+      && entry.args?.transform_mode === "rotate"
+    ));
+  }, { count: beforeRotateCount }, { timeout: 10000 });
+  const afterRotateState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  record("R X mouse-direction commit stores positive X rotation", (
+    getControlRotation(afterRotateState, "COG_CTRL")[0] > 0.1
+  ), {
+    rotation: getControlRotation(afterRotateState, "COG_CTRL"),
+  });
+  await executeCommandAndExpect("undo", {}, (state) => state.redo_stack >= 1);
 }
 
 async function validateTimelineLoopSpeedAndRangeDrag() {
