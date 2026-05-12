@@ -6,6 +6,38 @@
 发布远端：`origin https://github.com/Siger1989/gugebangdign.git`
 当前发布分支：`main`
 
+## Latest Update - 2026-05-12 Motion Brain Scale-Aware Quality Gate
+
+- Fixed a global Motion Brain quality-loop false blocker on imported rigs.
+- Root cause:
+  - Final-pose validators sampled solved motion in world units.
+  - Some checks used fixed meter-like thresholds, such as crouch COG drop `> 0.18`.
+  - Imported stylized GLB has `rig.scale ~= 0.55`; generated crouch solved to about `0.16` world units, which is a valid scaled crouch but failed the fixed threshold.
+  - AutoFix repeated the same canonical controller repair three times, but the final world-space feature stayed below the unscaled threshold.
+- Current behavior:
+  - `PoseFeatureExtractor` records `summary.rig.scale` and `summary.rig.height`.
+  - `IntentFulfillmentValidator`, `ActionValidator`, and `MotionCritic` scale world-distance thresholds by rig scale.
+  - This affects final-pose body motion, COG drop, contact drift, arm height, arm swing, strike reach, interaction drift, and gesture raise checks.
+  - `index.html` now references a new `app.js` version query to reduce stale browser module cache issues.
+- Regression coverage:
+  - The exact prompt `蹲下` still parses as `posture_transition/crouch`.
+  - After importing the sample GLB, binding skeleton, and generating IK/FK controls, `蹲下` must pass the final quality gate and become loadable.
+- Latest validation:
+  - `node --check app.js`: PASS
+  - `node --check motion_brain/pose_feature_extractor.js`: PASS
+  - `node --check motion_brain/intent_fulfillment_validator.js`: PASS
+  - `node --check motion_brain/action_validator.js`: PASS
+  - `node --check motion_brain/motion_critic.js`: PASS
+  - `node --check scripts/validate_demo_import.mjs`: PASS
+  - `npm run check`: PASS
+  - `npm run validate:import`: PASS
+- Logs:
+  - `artifacts/logs/npm_check_motion_brain_scale_gate_20260512_b.log`
+  - `artifacts/logs/validate_motion_brain_scale_gate_20260512_b.log`
+- Git publish:
+  - Published commit `Make Motion Brain quality checks scale aware`
+  - Remote push PASS
+
 ## Latest Update - 2026-05-12 Motion Brain Crouch Parser
 
 - Fixed the short prompt `蹲下` being treated as low-confidence `generic/generic`.

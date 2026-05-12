@@ -2082,6 +2082,29 @@ async function importSampleGlbAndValidateToeFallback() {
     criticIssues: importedIdleBrain?.critic_report?.issues?.map((issue) => issue.code),
     fixes: importedIdleBrain?.autofix?.fixes,
   });
+  await executeCommandAndExpect("generate_motion_from_text", { text: "\u8e72\u4e0b" }, (state) => (
+    state.motion_brain_last_action === "crouch"
+    && state.motion_brain_final_passed === true
+    && state.motion_brain_quality_gate === "passed"
+    && state.validation === "Passed"
+    && state.keyframes >= 4
+  ));
+  const importedCrouchBrain = await page.evaluate(() => window.__motionDebug.getMotionBrainLastResult());
+  record("imported GLB crouch uses rig-scale-aware final-pose validation", Boolean(
+    importedCrouchBrain?.action_ir?.action_type === "posture_transition"
+    && importedCrouchBrain?.action_ir?.subtype === "crouch"
+    && importedCrouchBrain?.intent_fulfillment_report?.checks?.crouch_cog_drop === "Passed"
+    && importedCrouchBrain?.intent_fulfillment_report?.checks?.crouch_foot_support === "Passed"
+    && importedCrouchBrain?.final_passed === true
+    && importedCrouchBrain?.quality_gate?.passed === true
+    && !(importedCrouchBrain?.quality_gate?.blockers || []).some((issue) => issue.code === "INTENT_NOT_FULFILLED")
+  ), {
+    actionIR: importedCrouchBrain?.action_ir,
+    rig: importedCrouchBrain?.pose_features?.summary?.rig,
+    cogDrop: importedCrouchBrain?.pose_features?.summary?.body?.cog_vertical_motion,
+    fulfillment: importedCrouchBrain?.intent_fulfillment_report,
+    blockers: importedCrouchBrain?.quality_gate?.blockers?.map((issue) => issue.code),
+  });
   const beforeRotateDebug = await page.evaluate(() => window.__motionDebug.getSourceRigDebug());
   await executeCommandAndExpect("rotate_joint_branch", { joint: "Hips", angle: 0.45, axis: [0, 1, 0] }, (state) => (
     state.joint_rotation_overrides >= 1

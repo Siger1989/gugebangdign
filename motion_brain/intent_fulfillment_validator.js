@@ -27,6 +27,15 @@ function issue(code, message, evidence = {}, severity = "blocker") {
   };
 }
 
+function featureScale(summary = {}) {
+  const scale = Number(summary.rig?.scale);
+  return Number.isFinite(scale) && scale > 0 ? Math.max(scale, 0.35) : 1;
+}
+
+function scaled(base, summary = {}) {
+  return base * featureScale(summary);
+}
+
 export class IntentFulfillmentValidator {
   validate(actionIR, poseFeatures, motionPlan) {
     const issues = [];
@@ -50,7 +59,7 @@ export class IntentFulfillmentValidator {
     const visibleMotion = bodyMotion
       + range(arm.upper_arm_forward_swing_angle?.R || [])
       + range(arm.upper_arm_forward_swing_angle?.L || []);
-    const minVisibleMotion = actionIR?.validation_profile === "idle" || actionIR?.action_type === "idle" ? 0.015 : 0.08;
+    const minVisibleMotion = scaled(actionIR?.validation_profile === "idle" || actionIR?.action_type === "idle" ? 0.015 : 0.08, summary);
     add("visible_motion", visibleMotion > minVisibleMotion, "No visible action");
     if (visibleMotion <= minVisibleMotion) {
       issues.push(issue("NO_VISIBLE_ACTION", "The generated result has no visible main action.", { visibleMotion }));
@@ -64,17 +73,21 @@ export class IntentFulfillmentValidator {
       const elbowExtensionPassed = elbowExtension > 0.05 || forwardRange > 0.25;
       const hasImpact = includesPhase(motionPlan, "impact");
       const torsoMotion = (body.hip_rotation || 0) + (body.chest_rotation || 0);
+      const minTorsoMotion = scaled(0.08, summary);
       add("strike_effector", actionIR.effector === "right_hand" || actionIR.effector === "left_hand", "Strike effector missing");
-      add("strike_forward_motion", forwardRange > 0.10, "Punch does not move forward enough");
+      const minForwardRange = scaled(0.10, summary);
+      add("strike_forward_motion", forwardRange > minForwardRange, "Punch does not move forward enough");
       add("strike_elbow_extension", elbowExtensionPassed, "Punch elbow does not extend enough");
-      add("strike_body_driver", torsoMotion > 0.08, "Punch lacks torso/hip drive");
+      add("strike_body_driver", torsoMotion > minTorsoMotion, "Punch lacks torso/hip drive");
       add("strike_impact_phase", hasImpact, "Impact phase missing");
-      if (forwardRange <= 0.10 || !elbowExtensionPassed || torsoMotion <= 0.08 || !hasImpact) {
+      if (forwardRange <= minForwardRange || !elbowExtensionPassed || torsoMotion <= minTorsoMotion || !hasImpact) {
         issues.push(issue("INTENT_NOT_FULFILLED", "Strike intent is not fulfilled by the solved motion.", {
           effector: actionIR.effector,
           forwardRange,
+          minForwardRange,
           elbowExtension,
           torsoMotion,
+          minTorsoMotion,
           hasImpact,
           suggested_fix: "amplify_effector_forward_drive_and_insert_impact",
         }));
@@ -92,12 +105,14 @@ export class IntentFulfillmentValidator {
       ));
       const hasLower = includesPhase(motionPlan, "lower");
       const hasSettle = includesPhase(motionPlan, "settle");
-      add("lie_down_cog_drop", cogDrop > 0.35, "COG does not descend enough");
+      const minCogDrop = scaled(0.35, summary);
+      add("lie_down_cog_drop", cogDrop > minCogDrop, "COG does not descend enough");
       add("lie_down_phases", hasLower && hasSettle, "Lie-down phases missing");
       add("lie_down_ground_contact", actionIR.contact_type === "ground_support", "Ground support contact missing");
-      if (cogDrop <= 0.35 || !hasLower || !hasSettle || actionIR.contact_type !== "ground_support") {
+      if (cogDrop <= minCogDrop || !hasLower || !hasSettle || actionIR.contact_type !== "ground_support") {
         issues.push(issue("INTENT_NOT_FULFILLED", "Lie-down intent is not fulfilled by a controlled descent to the floor.", {
           cogDrop,
+          minCogDrop,
           finalHeadLow,
           hasLower,
           hasSettle,
@@ -114,12 +129,15 @@ export class IntentFulfillmentValidator {
       const hasL = footStates.some((state) => state.L === "locked");
       const hasCrouchPhase = includesPhase(motionPlan, "crouch") || includesPhase(motionPlan, "lower");
       const hasRecover = includesPhase(motionPlan, "recover");
-      add("crouch_cog_drop", cogDrop > 0.18, "Crouch does not lower COG enough");
+      const minCogDrop = scaled(0.18, summary);
+      add("crouch_cog_drop", cogDrop > minCogDrop, "Crouch does not lower COG enough");
       add("crouch_foot_support", hasR && hasL, "Crouch lacks locked foot support");
       add("crouch_phase_chain", hasCrouchPhase && hasRecover, "Crouch phase chain missing");
-      if (cogDrop <= 0.18 || !hasR || !hasL || !hasCrouchPhase || !hasRecover) {
+      if (cogDrop <= minCogDrop || !hasR || !hasL || !hasCrouchPhase || !hasRecover) {
         issues.push(issue("INTENT_NOT_FULFILLED", "Crouch intent is not fulfilled by a controlled supported descent.", {
           cogDrop,
+          minCogDrop,
+          rigScale: summary.rig?.scale,
           hasR,
           hasL,
           hasCrouchPhase,
@@ -137,16 +155,20 @@ export class IntentFulfillmentValidator {
       const handDrift = contact.hand_contact_drift || 0;
       add("interaction_target", hasTarget, "Interaction target missing");
       add("interaction_reach_lock_force", hasReach && hasLock && hasForce, "Interaction phase chain missing");
-      add("interaction_contact_drift", handDrift <= 0.22, "Hand contact drifts too much");
-      add("interaction_body_driver", bodyMotion > 0.08, "Interaction body motion too small");
-      if (!hasTarget || !hasReach || !hasLock || !hasForce || handDrift > 0.22 || bodyMotion <= 0.08) {
+      const maxHandDrift = scaled(0.22, summary);
+      const minBodyMotion = scaled(0.08, summary);
+      add("interaction_contact_drift", handDrift <= maxHandDrift, "Hand contact drifts too much");
+      add("interaction_body_driver", bodyMotion > minBodyMotion, "Interaction body motion too small");
+      if (!hasTarget || !hasReach || !hasLock || !hasForce || handDrift > maxHandDrift || bodyMotion <= minBodyMotion) {
         issues.push(issue("INTENT_NOT_FULFILLED", "Push/pull interaction intent is not fulfilled.", {
           target: actionIR.target,
           hasReach,
           hasLock,
           hasForce,
           handDrift,
+          maxHandDrift,
           bodyMotion,
+          minBodyMotion,
           suggested_fix: "add_reach_contact_lock_force_apply_and_body_weight_shift",
         }));
       }
@@ -160,24 +182,28 @@ export class IntentFulfillmentValidator {
       const armForward = arm.forward_swing_range || 0;
       add("walk_alternating_contact", hasR && hasL, "Walk lacks alternating foot contact");
       add("walk_no_handik", handIk <= 0.2, "Ordinary walk should not lock HandIK");
-      add("walk_arm_swing", armForward > 0.01, "Walk arm swing too small");
-      if (!hasR || !hasL || handIk > 0.2 || armForward <= 0.01) {
+      const minArmForward = scaled(0.01, summary);
+      add("walk_arm_swing", armForward > minArmForward, "Walk arm swing too small");
+      if (!hasR || !hasL || handIk > 0.2 || armForward <= minArmForward) {
         issues.push(issue("INTENT_NOT_FULFILLED", "Walk intent is not fulfilled.", {
           hasR,
           hasL,
           handIk,
           armForward,
+          minArmForward,
           suggested_fix: "use_relaxed_locomotion_base_pose_and_fk_arm_swing",
         }));
       }
     }
 
     if (actionIR?.action_type === "gesture") {
-      const raised = (arm.max_wrist_height_relative_to_chest || 0) > 0.05;
+      const minRaised = scaled(0.05, summary);
+      const raised = (arm.max_wrist_height_relative_to_chest || 0) > minRaised;
       add("gesture_allows_raised_hand", raised, "Gesture hand did not raise");
       if (!raised) {
         issues.push(issue("INTENT_NOT_FULFILLED", "Gesture intent requires a visibly raised hand.", {
           max_wrist_height_relative_to_chest: arm.max_wrist_height_relative_to_chest || 0,
+          minRaised,
           suggested_fix: "raise_gesture_effector_and_add_wave_phase",
         }));
       }

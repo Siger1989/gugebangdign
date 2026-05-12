@@ -27,6 +27,15 @@ function affectedFramesFor(samples = [], predicate) {
   return samples.filter(predicate).map((sample) => sample.frame);
 }
 
+function featureScale(summary = {}) {
+  const scale = Number(summary.rig?.scale);
+  return Number.isFinite(scale) && scale > 0 ? Math.max(scale, 0.35) : 1;
+}
+
+function scaled(base, summary = {}) {
+  return base * featureScale(summary);
+}
+
 export class MotionCritic {
   review(intent, features) {
     const issues = [];
@@ -35,17 +44,22 @@ export class MotionCritic {
     const upperBodyTask = allowsUpperBodyTask(intent);
     const ordinary = isOrdinaryLocomotionOrIdle(intent);
 
-    if (ordinary && !upperBodyTask && summary.arm?.max_wrist_height_relative_to_chest > 0.08) {
+    const maxRelaxedWristAboveChest = scaled(0.08, summary);
+    if (ordinary && !upperBodyTask && summary.arm?.max_wrist_height_relative_to_chest > maxRelaxedWristAboveChest) {
       issues.push(createCriticIssue({
         code: "ARM_TOO_HIGH",
         severity: "blocker",
         message: "普通 locomotion / idle 中手腕长期高于胸口，疑似 T Pose/A Pose 或错误上肢任务残留。",
         affected_frames: affectedFramesFor(samples, (sample) => (
-          sample.arms.R.wrist_height_relative_to_chest > 0.08
-          || sample.arms.L.wrist_height_relative_to_chest > 0.08
+          sample.arms.R.wrist_height_relative_to_chest > maxRelaxedWristAboveChest
+          || sample.arms.L.wrist_height_relative_to_chest > maxRelaxedWristAboveChest
         )),
         suggested_fix: "use_relaxed_locomotion_base_pose_and_fk_arm_swing",
-        evidence: { max_wrist_height_relative_to_chest: summary.arm.max_wrist_height_relative_to_chest },
+        evidence: {
+          max_wrist_height_relative_to_chest: summary.arm.max_wrist_height_relative_to_chest,
+          max_allowed: maxRelaxedWristAboveChest,
+          rig_scale: summary.rig?.scale,
+        },
       }));
     }
 
@@ -98,7 +112,7 @@ export class MotionCritic {
       + (summary.body?.cog_forward_motion || 0)
       + (summary.body?.hip_rotation || 0)
       + (summary.body?.chest_rotation || 0);
-    const minBodyMotion = intent.validation_profile === "idle" ? 0.02 : 0.08;
+    const minBodyMotion = scaled(intent.validation_profile === "idle" ? 0.02 : 0.08, summary);
     if (bodyMotion < minBodyMotion) {
       issues.push(createCriticIssue({
         code: "NO_BODY_MOTION",
@@ -148,17 +162,18 @@ export class MotionCritic {
       }));
     }
 
-    if (intent.validation_profile === "interaction" && summary.contact?.hand_contact_drift > 0.18) {
+    const maxInteractionHandDrift = scaled(0.18, summary);
+    if (intent.validation_profile === "interaction" && summary.contact?.hand_contact_drift > maxInteractionHandDrift) {
       issues.push(createCriticIssue({
         code: "CONTACT_LOCK_MISSING",
         severity: "blocker",
         message: "interaction 接触阶段 HandIK 锁定目标漂移过大或未正确锁定。",
         suggested_fix: "lock_handik_during_contact_execute",
-        evidence: { hand_contact_drift: summary.contact.hand_contact_drift },
+        evidence: { hand_contact_drift: summary.contact.hand_contact_drift, max_allowed: maxInteractionHandDrift },
       }));
     }
 
-    if (ordinary && !upperBodyTask && summary.arm?.forward_swing_range < 0.035 && intent.validation_profile !== "idle") {
+    if (ordinary && !upperBodyTask && summary.arm?.forward_swing_range < scaled(0.035, summary) && intent.validation_profile !== "idle") {
       issues.push(createCriticIssue({
         code: "ARM_SWING_TOO_SMALL",
         severity: "warning",

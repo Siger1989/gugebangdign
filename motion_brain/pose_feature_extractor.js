@@ -221,7 +221,7 @@ export class PoseFeatureExtractor {
       };
     });
 
-    const summary = summarizeFeatures({ intent, motion_plan, controller_keyframes, samples, perSample, forward, up });
+    const summary = summarizeFeatures({ intent, motion_plan, controller_keyframes, samples, perSample, forward, up, basis });
     return {
       schema: "pose_feature_set_v1",
       intent: {
@@ -251,7 +251,7 @@ function getKneeBend(joints, side) {
   return 180 - angleDegrees(sub(hip, knee), sub(foot, knee));
 }
 
-function summarizeFeatures({ motion_plan, samples, perSample, forward, up }) {
+function summarizeFeatures({ motion_plan, samples, perSample, forward, up, basis = {} }) {
   const rootPositions = perSample.map((sample) => sample.body.root_position);
   const cogPositions = perSample.map((sample) => sample.body.cog_position);
   const pelvisRotations = perSample.map((sample) => sample.body.pelvis_rotation);
@@ -270,6 +270,10 @@ function summarizeFeatures({ motion_plan, samples, perSample, forward, up }) {
   ) : 0;
 
   return {
+    rig: {
+      height: Number.isFinite(Number(basis.height)) ? Number(basis.height) : null,
+      scale: Number.isFinite(Number(basis.scale)) ? Number(basis.scale) : 1,
+    },
     arm: {
       wrist_height_relative_to_pelvis: {
         R: perSample.map((sample) => sample.arms.R.wrist_height_relative_to_pelvis),

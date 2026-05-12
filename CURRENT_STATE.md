@@ -1,5 +1,58 @@
 # CURRENT_STATE
 
+## Motion Brain Global Recovery Loop - 2026-05-12
+
+Current objective:
+- Fix the Motion Brain quality loop globally when a clearly parsed action reaches `AutoFix N times still failed`.
+- The goal is not to special-case `crouch`; the pipeline should report blocker codes, apply issue-code-driven repairs, and fall back to a conservative regenerated pose when normal AutoFix cannot resolve final-pose quality issues.
+
+Current progress:
+- Started after user confirmed the latest parser is loaded:
+  - `蹲下` now parses as `posture_transition/crouch`, confidence `0.84`.
+  - The UI still shows `自动修正 3 次仍未通过`.
+- Working diagnosis:
+  - Parser and ActionIR are no longer the problem.
+  - The failure is in the final-pose quality loop: generated controller curves or solved pose fail MotionCritic/Validator, and AutoFix does not meaningfully change the offending final-pose features.
+- Confirmed root cause with a targeted imported-GLB trace:
+  - Blocker was `INTENT_NOT_FULFILLED`.
+  - Evidence: final solved `cogDrop=0.1648`, while crouch validator used a fixed `0.18` world-unit threshold.
+  - AutoFix repeatedly deepened the canonical controller plan, but the imported character's rig scale kept the solved world-space COG drop below the fixed threshold.
+- Implemented:
+  - `PoseFeatureExtractor` now carries `summary.rig.scale` and `summary.rig.height`.
+  - `IntentFulfillmentValidator`, `ActionValidator`, and `MotionCritic` now scale world-distance thresholds by final rig scale.
+  - The fix is global for final-pose body motion, COG drop, contact drift, arm height, arm swing, strike reach, interaction drift, and gesture raise thresholds.
+  - Updated `index.html` script version so browser reloads pull the new app module instead of stale cached `app.js`.
+  - Added imported-GLB regression coverage: after binding the sample model and generating IK/FK, text prompt `蹲下` must pass quality gate and be ready to load.
+
+Files changed:
+- `index.html`
+- `motion_brain/pose_feature_extractor.js`
+- `motion_brain/intent_fulfillment_validator.js`
+- `motion_brain/action_validator.js`
+- `motion_brain/motion_critic.js`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Validation result: PASS.
+- `node --check app.js`
+- `node --check motion_brain/pose_feature_extractor.js`
+- `node --check motion_brain/intent_fulfillment_validator.js`
+- `node --check motion_brain/action_validator.js`
+- `node --check motion_brain/motion_critic.js`
+- `node --check scripts/validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import`
+Final validation logs:
+- `artifacts/logs/npm_check_motion_brain_scale_gate_20260512_b.log`
+- `artifacts/logs/validate_motion_brain_scale_gate_20260512_b.log`
+
+Git publish:
+- Published commit `Make Motion Brain quality checks scale aware`.
+- Push to `origin/main`: PASS.
+
+Next step:
+- Hard refresh the browser and re-run `蹲下`; expected result is `Final: accepted` and `Load: ready` on imported GLB too.
+
 ## Motion Brain Parse Crouch Intent - 2026-05-12
 
 Current objective:

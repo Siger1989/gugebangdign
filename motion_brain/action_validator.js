@@ -71,6 +71,15 @@ function hasUpperBodyTask(intent = {}) {
     || ["both_hands", "dominant_hand", "raise", "wave", "weapon", "contact"].some((word) => handUsage.includes(word));
 }
 
+function featureScale(poseFeatures = {}) {
+  const scale = Number(poseFeatures?.summary?.rig?.scale);
+  return Number.isFinite(scale) && scale > 0 ? Math.max(scale, 0.35) : 1;
+}
+
+function scaled(base, poseFeatures = {}) {
+  return base * featureScale(poseFeatures);
+}
+
 function getLockSlide(keyframes, target) {
   let maxSlide = 0;
   ["R", "L"].forEach((side) => {
@@ -242,14 +251,15 @@ export class ActionValidator {
         + (summary.body?.cog_forward_motion || 0)
         + (summary.body?.hip_rotation || 0)
         + (summary.body?.chest_rotation || 0);
-      const minFinalBodyMotion = intent.validation_profile === "idle" ? 0.02 : 0.08;
+      const minFinalBodyMotion = scaled(intent.validation_profile === "idle" ? 0.02 : 0.08, poseFeatures);
       if (bodyMotion < minFinalBodyMotion) {
         checks.has_body_motion = "Final pose body motion too small";
         addIssue("NO_BODY_MOTION", "Final solved pose has too little Root / COG / Hip / Chest motion.");
       }
-      if ((summary.contact?.locked_target_world_drift || 0) > 0.22) {
+      const maxLockDrift = scaled(0.22, poseFeatures);
+      if ((summary.contact?.locked_target_world_drift || 0) > maxLockDrift) {
         checks.contact_consistency = "Final lock drift";
-        addIssue("CONTACT_LOCK_DRIFT", "Final solved locked targets drift too far.");
+        addIssue("CONTACT_LOCK_DRIFT", `Final solved locked targets drift too far (${(summary.contact?.locked_target_world_drift || 0).toFixed(3)} > ${maxLockDrift.toFixed(3)}).`);
       }
       if (intent.validation_profile === "run" && !summary.legs?.flight_phase_exists) {
         checks.action_type_specific_rules = "Issues";
