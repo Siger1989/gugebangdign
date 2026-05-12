@@ -32,6 +32,9 @@
 - Logs:
   - `artifacts/logs/npm_check_hybrid_wrist_rotation_20260512.log`
   - `artifacts/logs/validate_hybrid_wrist_rotation_20260512.log`
+- Git publish:
+  - Commit `4282b17 Fix hybrid IK FK wrist rotation`
+  - Remote push PASS
 
 ## Latest Update - 2026-05-12 Walk Validation Identity
 

@@ -42,7 +42,13 @@ Validation details:
 - Acceptance screenshot: `artifacts/screenshots/pipeline_acceptance_20260512_035354Z.png`
 
 Current blocking issue:
-- Need sync to publish repo and push.
+- None.
+
+Git publish:
+- Publish repo: `E:\codex骨骼软件_github_publish`
+- Branch: `main`
+- Commit: `4282b17 Fix hybrid IK FK wrist rotation`
+- Remote push: PASS.
 
 ## Walk Identity Validation False Positive Fix - 2026-05-12
 
