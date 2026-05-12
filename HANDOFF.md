@@ -6,6 +6,28 @@
 发布远端：`origin https://github.com/Siger1989/gugebangdign.git`
 当前发布分支：`main`
 
+## Latest Update - 2026-05-12 R View Hand Rotation
+
+- Fixed the persistent `R VIEW` hand/palm flip:
+  - Pressing `R` now keeps the current hand pose as the start pose.
+  - Dragging rotates around the active camera/view axis.
+  - Hand IK target and wrist joint position stay stable.
+  - Terminal hand/foot explicit rotations are now applied on top of the current solved world rotation, not the source rest pose.
+- New regression coverage:
+  - Select `R_Hand_IK` on the imported GLB.
+  - Press `R`.
+  - First pointer move must not snap.
+  - Committed rotation delta must align with the camera view axis.
+  - Wrist and IK target must not drift.
+- Latest validation:
+  - `node --check app.js`: PASS
+  - `node --check scripts\validate_demo_import.mjs`: PASS
+  - `npm run check`: PASS
+  - `npm run validate:import`: PASS
+- Logs:
+  - `artifacts/logs/npm_check_r_view_hand_20260512_b.log`
+  - `artifacts/logs/validate_r_view_hand_20260512_b.log`
+
 ## Latest Update - 2026-05-12
 
 - Motion Brain UI is now a two-step flow:

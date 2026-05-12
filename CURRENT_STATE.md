@@ -1,5 +1,49 @@
 # CURRENT_STATE
 
+## R View Hand Palm Flip Fix - 2026-05-12
+
+Current objective:
+- Fix the persistent `R VIEW` hand rotation bug:
+  - If the palm is facing the camera, pressing `R` and dragging should rotate around the camera/view axis.
+  - The wrist/hand target should stay in place.
+  - The palm should keep facing the camera instead of pitching upward or flipping from rest pose.
+
+Current progress:
+- Diagnosed the root cause:
+  - `R VIEW` produced a world-space camera-axis rotation.
+  - For terminal end-effectors such as `R_Hand`, `driveMappedSourceRigFromJoints()` then applied that explicit rotation on top of the source bone rest quaternion.
+  - That meant a tiny view-axis drag could recompute the hand from rest pose instead of the currently solved pose, making the palm tilt/flip.
+- Fixed terminal explicit rotations globally:
+  - Explicit rotations that were not already applied through a parent/child bone connection now use the current solved source-bone world quaternion as their base.
+  - This keeps hand/foot terminal rotations relative to the live solved pose.
+- Added a regression test:
+  - Select `R_Hand_IK`.
+  - Press `R`.
+  - First pointer move must not snap.
+  - Committed rotation delta axis must align with the camera view axis.
+  - `R_Hand_IK` position and `R_Hand` joint position must stay stable.
+
+Files changed:
+- `CURRENT_STATE.md`
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+
+Validation result: PASS.
+
+Commands run:
+- `node --check app.js`: PASS
+- `node --check scripts\validate_demo_import.mjs`: PASS
+- `npm run check`: PASS
+- `npm run validate:import`: PASS
+
+Validation details:
+- Full validation log: `artifacts/logs/validate_r_view_hand_20260512_b.log`
+- NPM check log: `artifacts/logs/npm_check_r_view_hand_20260512_b.log`
+- Acceptance screenshot: `artifacts/screenshots/pipeline_acceptance_20260512_023659Z.png`
+
+Current blocking issue:
+- Need sync to publish repo and push.
+
 ## Text Motion Load Button And Validation Fix - 2026-05-12
 
 Current objective:

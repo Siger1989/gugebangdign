@@ -5241,7 +5241,9 @@ function driveMappedSourceRigFromJoints(joints) {
     if (!bone || !rest || !explicit) {
       return;
     }
-    setSourceBoneWorldQuaternion(bone, explicit.clone().multiply(getSourceRestWorldQuaternion(rest)).normalize());
+    const solvedWorldQuaternion = new THREE.Quaternion();
+    bone.getWorldQuaternion(solvedWorldQuaternion);
+    setSourceBoneWorldQuaternion(bone, explicit.clone().multiply(solvedWorldQuaternion).normalize());
   });
   Runtime.importedModelScene?.updateMatrixWorld(true);
   return true;

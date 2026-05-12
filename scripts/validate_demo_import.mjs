@@ -617,6 +617,70 @@ async function keyboardRotateSelectedControlAndExpect(controlId, focusSelector =
   record("R view numeric input persists after rotation commit", rotateValueBox === 1, { valueBox: rotateValueBox });
 }
 
+async function validateHandViewAxisRotation() {
+  await executeCommandAndExpect("select_control", { control: "R_Hand_IK" }, (state) => state.selected_control === "R_Hand_IK");
+  const control = await page.evaluate(() => (
+    window.__motionDebug.getIkControlScreenPositions().find((item) => item.id === "R_Hand_IK" && item.visible)
+  ));
+  record("R hand view-axis regression control visible", Boolean(control), control);
+  if (!control) {
+    return;
+  }
+
+  const beforeRig = await page.evaluate(() => window.__motionDebug.getSourceRigDebug());
+  const beforeState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const beforeQuaternion = beforeRig?.mapped?.R_Hand?.current_world_quaternion;
+  const cameraState = await page.evaluate(() => window.__motionDebug.getCameraState());
+  const beforeCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.mouse.move(control.x + 68, control.y);
+  await page.locator("#rigCanvas").focus();
+  await page.keyboard.press("r");
+  await page.mouse.move(control.x + 112, control.y + 74, { steps: 1 });
+  const afterSuppressedMoveRig = await page.evaluate(() => window.__motionDebug.getSourceRigDebug());
+  const suppressedDelta = quaternionAngleDelta(
+    beforeQuaternion,
+    afterSuppressedMoveRig?.mapped?.R_Hand?.current_world_quaternion,
+  );
+  await page.mouse.move(control.x + 154, control.y + 108, { steps: 8 });
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForFunction(({ count }) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => (
+      (entry.name === "set_control_transform" || entry.name === "set_control_transforms")
+      && entry.status === "success"
+      && entry.args?.transform_mode === "rotate"
+    ));
+  }, { count: beforeCount }, { timeout: 10000 });
+
+  const afterRig = await page.evaluate(() => window.__motionDebug.getSourceRigDebug());
+  const afterState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const afterQuaternion = afterRig?.mapped?.R_Hand?.current_world_quaternion;
+  const deltaAxisAngle = quaternionDeltaAxisAngle(beforeQuaternion, afterQuaternion);
+  const viewAxis = normalizePlainVec(subPlainVec(cameraState.target, cameraState.position));
+  const axisDeviation = deltaAxisAngle.axis
+    ? Math.min(
+      angleBetweenPlainVec(deltaAxisAngle.axis, viewAxis),
+      angleBetweenPlainVec(scaleVec(deltaAxisAngle.axis, -1), viewAxis),
+    )
+    : 180;
+  record("R view hand rotation stays on camera view axis instead of flipping palm", (
+    suppressedDelta < 0.001
+    && deltaAxisAngle.angle > 0.04
+    && axisDeviation < 10
+    && distancePlainVec(getControlPosition(beforeState, "R_Hand_IK"), getControlPosition(afterState, "R_Hand_IK")) < 0.001
+    && jointPositionDelta(beforeState, afterState, "R_Hand") < 0.001
+  ), {
+    suppressedDelta,
+    angle: deltaAxisAngle.angle,
+    axis: deltaAxisAngle.axis,
+    viewAxis,
+    axisDeviation,
+    controlDelta: distancePlainVec(getControlPosition(beforeState, "R_Hand_IK"), getControlPosition(afterState, "R_Hand_IK")),
+    wristDelta: jointPositionDelta(beforeState, afterState, "R_Hand"),
+  });
+}
+
 async function validateControlMultiSelectAndTimelineExpansion() {
   const before = await page.evaluate(() => window.__motionDebug.getMotionState());
   const rightHand = before.ik_controls.find((control) => control.id === "R_Hand_IK");
@@ -1717,6 +1781,7 @@ async function importSampleGlbAndValidateToeFallback() {
     && state.control_ids.includes("COG_CTRL")
     && state.control_ids.includes("Chest_CTRL")
   ));
+  await validateHandViewAxisRotation();
   await executeCommandAndExpect("generate_motion_from_text", { text: "\u751f\u6210\u4e00\u4e2a\u81ea\u7136\u7ad9\u7acb\u547c\u5438" }, (state) => (
     state.motion_brain_last_action === "breath"
     && state.motion_brain_final_passed === true
@@ -2315,6 +2380,53 @@ function quaternionDelta(a, b) {
   }
   const dot = Math.abs(a.reduce((sum, value, index) => sum + Number(value) * Number(b[index]), 0));
   return 1 - Math.min(1, dot);
+}
+
+function quaternionAngleDelta(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== 4 || b.length !== 4) {
+    return 0;
+  }
+  const dot = Math.abs(a.reduce((sum, value, index) => sum + Number(value) * Number(b[index]), 0));
+  return 2 * Math.acos(Math.min(1, Math.max(-1, dot)));
+}
+
+function normalizeQuaternion(q) {
+  const length = Math.hypot(Number(q?.[0]), Number(q?.[1]), Number(q?.[2]), Number(q?.[3]));
+  return length > 0.000001 ? q.map((value) => Number(value) / length) : [0, 0, 0, 1];
+}
+
+function invertQuaternion(q) {
+  const normalized = normalizeQuaternion(q);
+  return [-normalized[0], -normalized[1], -normalized[2], normalized[3]];
+}
+
+function multiplyQuaternion(a, b) {
+  const qa = normalizeQuaternion(a);
+  const qb = normalizeQuaternion(b);
+  const [ax, ay, az, aw] = qa;
+  const [bx, by, bz, bw] = qb;
+  return normalizeQuaternion([
+    aw * bx + ax * bw + ay * bz - az * by,
+    aw * by - ax * bz + ay * bw + az * bx,
+    aw * bz + ax * by - ay * bx + az * bw,
+    aw * bw - ax * bx - ay * by - az * bz,
+  ]);
+}
+
+function quaternionDeltaAxisAngle(before, after) {
+  if (!Array.isArray(before) || !Array.isArray(after) || before.length !== 4 || after.length !== 4) {
+    return { axis: null, angle: 0 };
+  }
+  let delta = multiplyQuaternion(after, invertQuaternion(before));
+  if (delta[3] < 0) {
+    delta = delta.map((value) => -value);
+  }
+  const angle = 2 * Math.acos(Math.min(1, Math.max(-1, delta[3])));
+  const sinHalf = Math.sqrt(Math.max(0, 1 - delta[3] * delta[3]));
+  const axis = sinHalf > 0.0001
+    ? [delta[0] / sinHalf, delta[1] / sinHalf, delta[2] / sinHalf]
+    : [1, 0, 0];
+  return { axis, angle };
 }
 
 function sourceRigTransformsStable(before, after) {
