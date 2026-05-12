@@ -1,10 +1,40 @@
 # 动作生成工作台交接文档
 
-更新时间：2026-05-11 19:13 +08:00
+更新时间：2026-05-12 12:43 +08:00
 当前工作目录：`E:\codex骨骼软件`
 发布 Git 工作目录：`E:\codex骨骼软件_github_publish`
 发布远端：`origin https://github.com/Siger1989/gugebangdign.git`
 当前发布分支：`main`
+
+## Latest Update - 2026-05-12 Motion Brain Crouch Parser
+
+- Fixed the short prompt `蹲下` being treated as low-confidence `generic/generic`.
+- Root cause:
+  - The keyword parser did not map crouch verbs, even though `Crouch_Basic` and `crouch_down` primitives already existed.
+  - Because the prompt fell into generic fallback, the quality gate correctly blocked it instead of pretending success.
+- Current behavior:
+  - `蹲下` now parses as `posture_transition / crouch`.
+  - `ActionIR` uses `verb_family=crouch`, `direction=down`, `contact_type=ground_support`, and `end_pose=crouching`.
+  - `ActionGrammar` supplies `prepare -> crouch_down -> hold -> recover`.
+  - Intent fulfillment checks COG drop, locked foot support, and the crouch phase chain.
+  - AutoFix can amplify the crouch descent and pin FootIK if validation reports `INTENT_NOT_FULFILLED`.
+- Regression coverage:
+  - Motion Brain pipeline sample includes `蹲下`.
+  - UI preview test enters exactly `蹲下` and requires `ActionIR: posture_transition/crouch`, `Load: ready`, and an enabled load button.
+- Latest validation:
+  - `node --check motion_brain/action_intent_parser.js`: PASS
+  - `node --check motion_brain/action_ir_builder.js`: PASS
+  - `node --check motion_brain/action_grammar.js`: PASS
+  - `node --check motion_brain/intent_fulfillment_validator.js`: PASS
+  - `node --check motion_brain/action_auto_fixer.js`: PASS
+  - `node --check scripts/validate_demo_import.mjs`: PASS
+  - `npm run check`: PASS
+  - `npm run validate:import`: PASS
+- Logs:
+  - `artifacts/logs/npm_check_crouch_20260512.log`
+  - `artifacts/logs/validate_motion_brain_crouch_20260512.log`
+- Git publish:
+  - Remote push PASS
 
 ## Latest Update - 2026-05-12 IK/FK Hybrid Wrist Rotation
 

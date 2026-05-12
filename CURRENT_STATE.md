@@ -1,5 +1,52 @@
 # CURRENT_STATE
 
+## Motion Brain Parse Crouch Intent - 2026-05-12
+
+Current objective:
+- Fix `蹲下` being parsed as `generic/generic` with confidence `0.42`, which makes Motion Brain auto-fix once and still block loading.
+
+Current progress:
+- Started after user showed the Motion Brain panel for `蹲下`:
+  - Parser: `keyword_rules_v2 confidence=0.42`
+  - ActionIR: `generic/generic`
+  - Button: `自动修正 1 次仍未通过`
+- Diagnosis:
+  - This is a parser/grammar coverage gap, not a bad user prompt.
+  - `蹲下` must become a known posture transition action, not generic fallback.
+- Implemented:
+  - Added crouch keyword parsing before generic fallback.
+  - Mapped crouch into `ActionIR` as `posture_transition / crouch`, `verb_family=crouch`, `direction=down`, `contact_type=ground_support`.
+  - Added crouch ActionGrammar phases and primitives.
+  - Added intent-fulfillment checks for COG drop, locked foot support, and phase chain.
+  - Added AutoFix support to amplify crouch descent and lock FootIK if validation reports intent failure.
+  - Added pipeline and UI regression coverage for short text `蹲下`.
+
+Files changed:
+- `motion_brain/action_intent_parser.js`
+- `motion_brain/action_ir_builder.js`
+- `motion_brain/action_grammar.js`
+- `motion_brain/intent_fulfillment_validator.js`
+- `motion_brain/action_auto_fixer.js`
+- `scripts/validate_demo_import.mjs`
+- `CURRENT_STATE.md`
+
+Validation result: PASS.
+- `node --check motion_brain/action_intent_parser.js`
+- `node --check motion_brain/action_ir_builder.js`
+- `node --check motion_brain/action_grammar.js`
+- `node --check motion_brain/intent_fulfillment_validator.js`
+- `node --check motion_brain/action_auto_fixer.js`
+- `node --check scripts/validate_demo_import.mjs`
+- `npm run check`
+- `npm run validate:import`
+
+Git publish:
+- Synced changed source files into `E:\codex骨骼软件_github_publish`.
+- Pushed to `origin/main`: PASS.
+
+Next step:
+- Hard refresh `http://localhost:8780/index.html`, enter `蹲下`, and verify the preview says `ActionIR: posture_transition/crouch` with `Load: ready`.
+
 ## Motion Brain Self-Check Must Auto-Fix - 2026-05-12
 
 Current objective:

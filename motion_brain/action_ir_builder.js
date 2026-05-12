@@ -23,6 +23,7 @@ function inferVerbFamily(intent = {}) {
   if (intent.subtype === "walk" || intent.subtype === "run") return "move";
   if (String(intent.subtype || "").includes("jump")) return "jump";
   if (intent.subtype === "standing_to_ground" || intent.validation_profile === "lie_down") return "lie_down";
+  if (intent.subtype === "crouch" || intent.validation_profile === "crouch") return "crouch";
   if (String(intent.subtype || "").includes("push")) return "push";
   if (String(intent.subtype || "").includes("pick")) return "grab";
   if (String(intent.subtype || "").includes("strike") || intent.validation_profile === "attack") return "strike";
@@ -37,13 +38,14 @@ function inferContactType(intent = {}, verbFamily) {
   if (verbFamily === "strike" || verbFamily === "impact_body") return "impact";
   if (["push", "pull"].includes(verbFamily)) return "sustained_lock";
   if (verbFamily === "grab") return "grab_lock";
-  if (verbFamily === "lie_down") return "ground_support";
+  if (verbFamily === "lie_down" || verbFamily === "crouch") return "ground_support";
   if (intent.validation_profile === "walk" || intent.validation_profile === "run") return "foot_support";
   return "none";
 }
 
 function inferEndPose(intent = {}, verbFamily) {
   if (verbFamily === "lie_down") return "lying_on_floor";
+  if (verbFamily === "crouch") return "crouching";
   if (intent.validation_profile === "idle") return "relaxed_idle";
   if (intent.validation_profile === "walk" || intent.validation_profile === "run") return "locomotion_cycle";
   if (verbFamily === "grab") return "secured_object";
@@ -91,7 +93,7 @@ export class ActionIRBuilder {
       support_points: intent.foot_usage?.includes("support") ? ["feet"] : [],
       body_mass_hint: intent.energy === "low" ? "heavy" : "default",
       impact_force_hint: verbFamily === "impact_body" || verbFamily === "strike" ? intent.force : "none",
-      ground_contact_points: verbFamily === "lie_down" ? ["feet", "hands", "torso"] : [],
+      ground_contact_points: verbFamily === "lie_down" ? ["feet", "hands", "torso"] : (verbFamily === "crouch" ? ["feet"] : []),
       prop_weight_hint: intent.prop_usage === "weapon" ? "weapon_light" : "none",
     });
     return {

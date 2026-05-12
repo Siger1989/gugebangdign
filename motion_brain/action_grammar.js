@@ -52,6 +52,12 @@ export const ACTION_GRAMMAR = {
     validation_profile: "lie_down",
     rules: ["must_have_ground_contact", "cog_descends", "controlled_body_lower"],
   },
+  crouch: {
+    required_phases: ["prepare", "crouch_down", "hold", "recover"],
+    required_primitives: ["shift_weight", "lower_cog", "bend_knees", "plant_foot", "lock_foot", "brace_body", "recover_pose"],
+    validation_profile: "crouch",
+    rules: ["cog_descends", "foot_sliding", "has_body_motion", "recover_exists"],
+  },
   hit_reaction: {
     required_phases: ["impact", "recoil", "balance_loss", "recover"],
     required_primitives: ["impact_body", "recoil_body", "pull_back", "recover_pose"],

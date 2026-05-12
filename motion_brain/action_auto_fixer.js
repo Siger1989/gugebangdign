@@ -193,6 +193,20 @@ export class ActionAutoFixer {
           }
         });
         fixes.push("amplified_lie_down_descent");
+      } else if (intent?.verb_family === "crouch" || intent?.validation_profile === "crouch" || intent?.subtype === "crouch") {
+        fixedPlan.phases.forEach((phase) => {
+          const name = String(phase.phase_name || "");
+          if (name.includes("crouch") || name.includes("hold") || name.includes("lower")) {
+            ensureController(phase, "COG_CTRL").offset[1] = Math.min(ensureController(phase, "COG_CTRL").offset[1], name.includes("hold") ? -0.34 : -0.30);
+            ensureController(phase, "Chest_CTRL").rotation[0] = Math.max(ensureController(phase, "Chest_CTRL").rotation[0], name.includes("hold") ? 0.14 : 0.20);
+            phase.contact_state ||= {};
+            phase.contact_state.feet = { R: "locked", L: "locked" };
+            ensureController(phase, "R_Foot_IK").locked = true;
+            ensureController(phase, "L_Foot_IK").locked = true;
+          }
+        });
+        pinLockedControls(fixedPlan.phases, "feet");
+        fixes.push("amplified_crouch_descent_and_foot_support");
       } else if (["push", "pull"].includes(intent?.verb_family)) {
         fixedPlan.phases.forEach((phase) => {
           const name = String(phase.phase_name || "");

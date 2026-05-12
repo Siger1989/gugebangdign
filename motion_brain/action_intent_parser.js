@@ -181,6 +181,23 @@ export class ActionIntentParser {
       return;
     }
 
+    if (hasAny(source, ["\u8e72\u4e0b", "\u4e0b\u8e72", "\u8e72\u4f0f", "\u8e72", "crouch", "squat"])) {
+      Object.assign(intent, {
+        action_type: "posture_transition",
+        subtype: "crouch",
+        loopable: false,
+        duration_frames: 16,
+        body_posture: "crouching",
+        direction: "down",
+        main_body_part: "full_body",
+        hand_usage: "balance",
+        foot_usage: "ground_support",
+        contact_requirements: ["foot_support"],
+        validation_profile: "crouch",
+      });
+      return;
+    }
+
     if (hasAny(source, ["\u540e\u9000", "\u649e\u5230\u5899", "\u649e\u5899", "\u649e\u5230", "\u649e", "backward", "wall"])) {
       Object.assign(intent, {
         action_type: hasAny(source, ["\u540e\u9000", "backward"]) ? "reaction" : "hit_reaction",
@@ -313,6 +330,7 @@ export class ActionIntentParser {
     if (hasAny(source, ["\u62c9", "pull"])) verbs.push("pull");
     if (hasAny(source, ["\u6361", "\u62fe\u53d6", "\u62ff\u8d77", "pick", "grab"])) verbs.push("grab");
     if (hasAny(source, ["\u8eba", "lie"])) verbs.push("lie_down");
+    if (hasAny(source, ["\u8e72", "crouch", "squat"])) verbs.push("crouch");
     if (hasAny(source, ["\u649e", "hit", "impact"])) verbs.push("impact_body");
     if (hasAny(source, ["\u6325\u624b", "\u4e3e\u624b", "wave", "raise"])) verbs.push("wave");
     if (hasAny(source, ["\u52a8", "move"])) verbs.push("move");

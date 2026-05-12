@@ -1518,6 +1518,7 @@ async function validateMotionBrainPipeline() {
   const samples = [
     ["\u5411\u524d\u6325\u51fa\u53f3\u62f3", "attack", "forward_strike", "strike", "right_hand"],
     ["\u8eba\u4e0b", "posture_transition", "standing_to_ground", "lie_down", "full_body"],
+    ["\u8e72\u4e0b", "posture_transition", "crouch", "crouch", "full_body"],
     ["\u751f\u6210\u4e00\u4e2a\u666e\u901a\u8d70\u8def", "locomotion", "walk"],
     ["\u751f\u6210\u4e00\u4e2a\u614c\u5f20\u5954\u8dd1", "locomotion", "run"],
     ["\u751f\u6210\u4e00\u4e2a\u81ea\u7136\u7ad9\u7acb\u547c\u5438", "idle", "breath"],
@@ -1602,6 +1603,21 @@ async function validateMotionBrainPipeline() {
         && result.action_ir?.direction === "down"
         && result.motion_plan?.phases?.some((phase) => phase.phase_name === "settle_on_floor")
         && result.intent_fulfillment_report?.checks?.lie_down_cog_drop === "Passed"
+      ), {
+        actionIR: result.action_ir,
+        phases: result.motion_plan?.phases?.map((phase) => phase.phase_name),
+        fulfillment: result.intent_fulfillment_report,
+      });
+    }
+
+    if (subtype === "crouch") {
+      record("intent fulfillment validates crouch semantic slots", Boolean(
+        result.action_ir?.verb_family === "crouch"
+        && result.action_ir?.direction === "down"
+        && result.action_ir?.contact_type === "ground_support"
+        && result.motion_plan?.phases?.some((phase) => phase.phase_name === "crouch_down")
+        && result.intent_fulfillment_report?.checks?.crouch_cog_drop === "Passed"
+        && result.intent_fulfillment_report?.checks?.crouch_foot_support === "Passed"
       ), {
         actionIR: result.action_ir,
         phases: result.motion_plan?.phases?.map((phase) => phase.phase_name),
@@ -1774,6 +1790,41 @@ async function validateMotionBrainPipeline() {
     shortIdleLoadButtonEnabled,
     shortIdleLoadButtonText,
     previewTail: shortIdlePreviewText?.split("\n").slice(-5),
+  });
+
+  await page.locator("#motionBrainTextInput").fill("\u8e72\u4e0b");
+  const beforeCrouchPreviewCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.locator("#generateMotionBrainButton").click();
+  await page.waitForFunction(({ count }) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => (
+      entry.name === "preview_motion_from_text"
+      && entry.status === "success"
+    ));
+  }, { count: beforeCrouchPreviewCount }, { timeout: 10000 });
+  const crouchUiResult = await page.evaluate(() => window.__motionDebug.getMotionBrainLastResult());
+  const crouchLoadButtonEnabled = await page.locator("#loadMotionBrainButton").isEnabled();
+  const crouchLoadButtonText = await page.locator("#loadMotionBrainButton").textContent();
+  const crouchPreviewText = await page.locator("#motionBrainResultPreview").textContent();
+  record("motion brain parses short crouch text as supported posture transition", Boolean(
+    crouchUiResult
+    && crouchUiResult.action_ir?.action_type === "posture_transition"
+    && crouchUiResult.action_ir?.subtype === "crouch"
+    && crouchUiResult.action_ir?.verb_family === "crouch"
+    && crouchUiResult.action_ir?.parser_confidence >= 0.6
+    && crouchUiResult.final_passed === true
+    && crouchUiResult.ready_to_load === true
+    && crouchLoadButtonEnabled
+    && !crouchLoadButtonText?.includes("\u672a\u901a\u8fc7")
+    && crouchPreviewText?.includes("ActionIR: posture_transition/crouch")
+    && crouchPreviewText?.includes("Load: ready")
+  ), {
+    actionIR: crouchUiResult?.action_ir,
+    finalPassed: crouchUiResult?.final_passed,
+    readyToLoad: crouchUiResult?.ready_to_load,
+    crouchLoadButtonEnabled,
+    crouchLoadButtonText,
+    previewTail: crouchPreviewText?.split("\n").slice(-6),
   });
 
   const beforeUiPreviewState = await page.evaluate(() => window.__motionDebug.getMotionState());

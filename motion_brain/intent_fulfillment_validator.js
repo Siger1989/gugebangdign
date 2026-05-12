@@ -107,6 +107,28 @@ export class IntentFulfillmentValidator {
       }
     }
 
+    if (actionIR?.verb_family === "crouch" || actionIR?.validation_profile === "crouch") {
+      const cogDrop = body.cog_vertical_motion || 0;
+      const footStates = legs.foot_contact_state || [];
+      const hasR = footStates.some((state) => state.R === "locked");
+      const hasL = footStates.some((state) => state.L === "locked");
+      const hasCrouchPhase = includesPhase(motionPlan, "crouch") || includesPhase(motionPlan, "lower");
+      const hasRecover = includesPhase(motionPlan, "recover");
+      add("crouch_cog_drop", cogDrop > 0.18, "Crouch does not lower COG enough");
+      add("crouch_foot_support", hasR && hasL, "Crouch lacks locked foot support");
+      add("crouch_phase_chain", hasCrouchPhase && hasRecover, "Crouch phase chain missing");
+      if (cogDrop <= 0.18 || !hasR || !hasL || !hasCrouchPhase || !hasRecover) {
+        issues.push(issue("INTENT_NOT_FULFILLED", "Crouch intent is not fulfilled by a controlled supported descent.", {
+          cogDrop,
+          hasR,
+          hasL,
+          hasCrouchPhase,
+          hasRecover,
+          suggested_fix: "insert_crouch_down_with_locked_feet",
+        }));
+      }
+    }
+
     if (["push", "pull"].includes(actionIR?.verb_family)) {
       const hasTarget = Boolean(actionIR.target);
       const hasReach = includesPhase(motionPlan, "reach");
