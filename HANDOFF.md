@@ -6,6 +6,33 @@
 发布远端：`origin https://github.com/Siger1989/gugebangdign.git`
 当前发布分支：`main`
 
+## Latest Update - 2026-05-12 IK/FK Hybrid Wrist Rotation
+
+- Fixed the bent-arm `R VIEW` hand/wrist rotation regression in IK/FK hybrid mode.
+- Root cause:
+  - Hybrid mode can expose both an end-effector IK control (`R_Hand_IK`) and an FK/debug joint control (`R_Hand_CTRL`) for the same terminal joint.
+  - The old modal rotate filtering only removed parent/child FK nesting; it did not collapse same-joint IK/FK duplicate writers.
+  - When both controls entered one rotate operation, the same wrist rotation could be applied twice, which was most visible after the arm was bent.
+- Current behavior:
+  - One rotate operation now chooses one writer per limb.
+  - If the active control is IK, same-limb FK debug controls are ignored for that rotate.
+  - If the active control is FK, same-limb IK end-effector controls are ignored for that rotate.
+  - The rule is used by modal `R` transforms and direct `set_control_transforms` batch commands.
+- New regression coverage:
+  - Bend the imported GLB right arm with `R_Hand_IK`.
+  - Select both `R_Hand_CTRL` and `R_Hand_IK`.
+  - Direct batch rotation must apply only one writer.
+  - Modal `R VIEW` rotation must commit only the active hand IK writer.
+  - Wrist/IK target position must remain attached, and source hand rotation delta must align to the camera view axis.
+- Latest validation:
+  - `node --check app.js`: PASS
+  - `node --check scripts\validate_demo_import.mjs`: PASS
+  - `npm run check`: PASS
+  - `npm run validate:import`: PASS
+- Logs:
+  - `artifacts/logs/npm_check_hybrid_wrist_rotation_20260512.log`
+  - `artifacts/logs/validate_hybrid_wrist_rotation_20260512.log`
+
 ## Latest Update - 2026-05-12 Walk Validation Identity
 
 - Fixed a false positive where `Walk_8F` could look correct but validation still showed `有问题` because `骨骼身份错误` reported `左右身份不匹配`.

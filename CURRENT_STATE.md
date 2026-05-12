@@ -1,5 +1,49 @@
 # CURRENT_STATE
 
+## IK/FK Hybrid Wrist Rotation Interference - 2026-05-12
+
+Current objective:
+- Fix the bent-arm `R VIEW` wrist rotation issue where IK/FK hybrid mode can make the hand/palm flip or "fly" after pressing `R`.
+
+Current progress:
+- Started after user observed that rotation feels normal when the arm is straight, but fails after the arm is bent.
+- Diagnosis:
+  - This is likely not just mouse angle mapping.
+  - In hybrid mode the same terminal joint can be represented by both an end-effector IK control, such as `R_Hand_IK`, and an FK/debug joint control, such as `R_Hand_CTRL`.
+  - Existing rotate filtering removes nested parent/child FK conflicts, but does not remove controls that target the exact same joint.
+  - If both controls are selected or picked into the same modal rotation, the wrist can receive the same view-axis rotation twice.
+- Implemented a global rotate-writer filter:
+  - For each arm/leg limb, one `R` operation now chooses either the active IK end-effector writer or the active FK writer.
+  - Same-joint duplicates such as `R_Hand_IK` + `R_Hand_CTRL` are collapsed before rotation.
+  - The same filter is applied to modal `R` transforms and direct `set_control_transforms` batch commands.
+  - If the active control is IK, FK debug controls on the same limb are ignored for that rotation; if the active control is FK, IK on that limb is ignored.
+- Added regression coverage:
+  - Imported GLB right arm is first bent with `R_Hand_IK`.
+  - A direct batch rotate containing both `R_Hand_CTRL` and `R_Hand_IK` must apply only one writer.
+  - A modal `R VIEW` rotation with both selected must commit only `R_Hand_IK` when it is the active control.
+  - The hand IK target and wrist joint position must stay attached, and the source hand rotation delta must align with the camera view axis.
+
+Files changed:
+- `CURRENT_STATE.md`
+- `app.js`
+- `scripts/validate_demo_import.mjs`
+
+Validation result: PASS.
+
+Commands run:
+- `node --check app.js`: PASS
+- `node --check scripts\validate_demo_import.mjs`: PASS
+- `npm run check`: PASS
+- `npm run validate:import`: PASS
+
+Validation details:
+- Full validation log: `artifacts/logs/validate_hybrid_wrist_rotation_20260512.log`
+- NPM check log: `artifacts/logs/npm_check_hybrid_wrist_rotation_20260512.log`
+- Acceptance screenshot: `artifacts/screenshots/pipeline_acceptance_20260512_035354Z.png`
+
+Current blocking issue:
+- Need sync to publish repo and push.
+
 ## Walk Identity Validation False Positive Fix - 2026-05-12
 
 Current objective:

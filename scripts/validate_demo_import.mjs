@@ -690,6 +690,152 @@ async function validateHandViewAxisRotation() {
   });
 }
 
+async function validateBentHybridHandViewAxisRotation() {
+  const bendTarget = await page.evaluate(() => {
+    const state = window.__motionDebug.getMotionState();
+    const rig = window.__motionDebug.getSourceRigDebug();
+    const jointPosition = (name) => state.joints.find((joint) => joint.name === name)?.position || [0, 0, 0];
+    const shoulder = jointPosition("R_UpperArm");
+    const hand = jointPosition("R_Hand");
+    const forward = rig?.basis?.forward || [0, 0, 1];
+    const up = rig?.basis?.up || [0, 1, 0];
+    return shoulder.map((value, index) => (
+      value
+      + (hand[index] - shoulder[index]) * 0.58
+      + forward[index] * 0.12
+      + up[index] * 0.03
+    ));
+  });
+  const beforeBend = await page.evaluate(() => window.__motionDebug.getMotionState());
+  await executeCommandAndExpect("set_control_transform", {
+    control_id: "R_Hand_IK",
+    transform_mode: "translate",
+    space: "global",
+    position: bendTarget,
+  }, (state) => state.selected_control === "R_Hand_IK");
+  const afterBend = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const shoulderBeforeReach = vecDistance(getJointPosition(beforeBend, "R_UpperArm"), getJointPosition(beforeBend, "R_Hand"));
+  const shoulderAfterReach = vecDistance(getJointPosition(afterBend, "R_UpperArm"), getJointPosition(afterBend, "R_Hand"));
+  record("bent-arm hybrid rotation regression starts from a flexed IK pose", (
+    shoulderBeforeReach - shoulderAfterReach > 0.01
+    && controlJointDistance(afterBend, "R_Hand_IK") < 0.001
+  ), {
+    bendTarget,
+    shoulderBeforeReach,
+    shoulderAfterReach,
+    handIkDelta: controlJointDistance(afterBend, "R_Hand_IK"),
+  });
+
+  await executeCommandAndExpect("select_control", { control: "R_Hand_CTRL" }, (state) => state.selected_control === "R_Hand_CTRL");
+  await executeCommandAndExpect("select_control", { control: "R_Hand_IK", additive: true }, (state) => (
+    state.selected_control === "R_Hand_IK"
+    && state.selected_controls.includes("R_Hand_CTRL")
+    && state.selected_controls.includes("R_Hand_IK")
+  ));
+  await executeCommandAndExpect("set_control_transforms", {
+    transform_mode: "rotate",
+    space: "global",
+    transforms: [
+      { control_id: "R_Hand_CTRL", rotation: [0, 0, 0.12] },
+      { control_id: "R_Hand_IK", rotation: [0, 0, 0.12] },
+    ],
+  }, (state) => state.selected_control === "R_Hand_IK" && state.selected_control_count === 1);
+  const directRotateCommand = await getLastCommand("set_control_transforms");
+  record("direct batch rotate also filters same-joint IK/FK duplicate writers", (
+    directRotateCommand?.result?.count === 1
+    && directRotateCommand?.result?.selected_controls?.length === 1
+    && directRotateCommand.result.selected_controls.includes("R_Hand_IK")
+  ), directRotateCommand);
+  await executeCommandAndExpect("undo", {}, (state) => (
+    state.selected_control === "R_Hand_IK"
+    && state.selected_controls.includes("R_Hand_CTRL")
+    && state.selected_controls.includes("R_Hand_IK")
+  ));
+  const handIkScreen = await page.evaluate(() => (
+    window.__motionDebug.getIkControlScreenPositions().find((item) => item.id === "R_Hand_IK" && item.visible)
+  ));
+  record("bent-arm hybrid hand IK control visible", Boolean(handIkScreen), handIkScreen);
+  if (!handIkScreen) {
+    return;
+  }
+
+  const beforeRig = await page.evaluate(() => window.__motionDebug.getSourceRigDebug());
+  const beforeState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const beforeQuaternion = beforeRig?.mapped?.R_Hand?.current_world_quaternion;
+  const cameraState = await page.evaluate(() => window.__motionDebug.getCameraState());
+  const beforeCount = await page.evaluate(() => window.__motionDebug.getCommandLog().length);
+  await page.mouse.move(handIkScreen.x + 68, handIkScreen.y);
+  await page.locator("#rigCanvas").focus();
+  await page.keyboard.press("r");
+  await page.mouse.move(handIkScreen.x + 112, handIkScreen.y + 74, { steps: 1 });
+  const afterSuppressedMoveRig = await page.evaluate(() => window.__motionDebug.getSourceRigDebug());
+  const suppressedDelta = quaternionAngleDelta(
+    beforeQuaternion,
+    afterSuppressedMoveRig?.mapped?.R_Hand?.current_world_quaternion,
+  );
+  await page.mouse.move(handIkScreen.x + 154, handIkScreen.y + 108, { steps: 8 });
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForFunction(({ count }) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return log.slice(count).some((entry) => (
+      (entry.name === "set_control_transform" || entry.name === "set_control_transforms")
+      && entry.status === "success"
+      && entry.args?.transform_mode === "rotate"
+    ));
+  }, { count: beforeCount }, { timeout: 10000 });
+
+  const rotateCommand = await page.evaluate(({ count }) => {
+    const log = window.__motionDebug?.getCommandLog?.() || [];
+    return [...log.slice(count)].reverse().find((entry) => (
+      (entry.name === "set_control_transform" || entry.name === "set_control_transforms")
+      && entry.status === "success"
+      && entry.args?.transform_mode === "rotate"
+    )) || null;
+  }, { count: beforeCount });
+  const transformedIds = rotateCommand?.args?.transforms?.map((item) => item.control_id)
+    || (rotateCommand?.args?.control_id ? [rotateCommand.args.control_id] : []);
+  const afterRig = await page.evaluate(() => window.__motionDebug.getSourceRigDebug());
+  const afterState = await page.evaluate(() => window.__motionDebug.getMotionState());
+  const afterQuaternion = afterRig?.mapped?.R_Hand?.current_world_quaternion;
+  const deltaAxisAngle = quaternionDeltaAxisAngle(beforeQuaternion, afterQuaternion);
+  const viewAxis = normalizePlainVec(subPlainVec(cameraState.target, cameraState.position));
+  const axisDeviation = deltaAxisAngle.axis
+    ? Math.min(
+      angleBetweenPlainVec(deltaAxisAngle.axis, viewAxis),
+      angleBetweenPlainVec(scaleVec(deltaAxisAngle.axis, -1), viewAxis),
+    )
+    : 180;
+  record("bent-arm R view rotation filters IK/FK duplicate writers", (
+    transformedIds.length === 1
+    && transformedIds.includes("R_Hand_IK")
+    && !transformedIds.includes("R_Hand_CTRL")
+    && afterState.selected_controls.length === 1
+    && afterState.selected_controls.includes("R_Hand_IK")
+  ), {
+    transformedIds,
+    selectedControls: afterState.selected_controls,
+    rotateCommand,
+  });
+  record("bent-arm R view hand rotation stays camera-axis and attached", (
+    suppressedDelta < 0.001
+    && deltaAxisAngle.angle > 0.04
+    && axisDeviation < 10
+    && distancePlainVec(getControlPosition(beforeState, "R_Hand_IK"), getControlPosition(afterState, "R_Hand_IK")) < 0.001
+    && jointPositionDelta(beforeState, afterState, "R_Hand") < 0.001
+  ), {
+    suppressedDelta,
+    angle: deltaAxisAngle.angle,
+    axis: deltaAxisAngle.axis,
+    viewAxis,
+    axisDeviation,
+    controlDelta: distancePlainVec(getControlPosition(beforeState, "R_Hand_IK"), getControlPosition(afterState, "R_Hand_IK")),
+    wristDelta: jointPositionDelta(beforeState, afterState, "R_Hand"),
+  });
+  await executeCommandAndExpect("undo", {}, (state) => state.redo_stack >= 1);
+  await executeCommandAndExpect("undo", {}, (state) => state.redo_stack >= 1);
+}
+
 async function validateControlMultiSelectAndTimelineExpansion() {
   const before = await page.evaluate(() => window.__motionDebug.getMotionState());
   const rightHand = before.ik_controls.find((control) => control.id === "R_Hand_IK");
@@ -1139,10 +1285,11 @@ async function validateFkJointControlRotation() {
     const afterNestedRotate = await page.evaluate(() => window.__motionDebug.getMotionState());
     const beforeForearmLength = vecDistance(getJointPosition(beforeNestedRotate, "R_Forearm"), getJointPosition(beforeNestedRotate, "R_Hand"));
     const afterForearmLength = vecDistance(getJointPosition(afterNestedRotate, "R_Forearm"), getJointPosition(afterNestedRotate, "R_Hand"));
-    record("R rotate filters nested IK child and keeps wrist control attached", (
+    record("R rotate keeps the active IK writer when FK and IK are both selected", (
       distancePlainVec(getControlRotation(beforeNestedRotate, "R_Forearm_CTRL"), getControlRotation(afterFirstNestedMove, "R_Forearm_CTRL")) < 0.001
       && afterNestedRotate.selected_controls.length === 1
-      && afterNestedRotate.selected_controls.includes("R_Forearm_CTRL")
+      && afterNestedRotate.selected_controls.includes("R_Hand_IK")
+      && !afterNestedRotate.selected_controls.includes("R_Forearm_CTRL")
       && controlJointDistance(afterNestedRotate, "R_Hand_IK") < 0.001
       && Math.abs(afterForearmLength - beforeForearmLength) < 0.001
     ), {
@@ -1826,6 +1973,7 @@ async function importSampleGlbAndValidateToeFallback() {
     && state.control_ids.includes("Chest_CTRL")
   ));
   await validateHandViewAxisRotation();
+  await validateBentHybridHandViewAxisRotation();
   await executeCommandAndExpect("generate_motion_from_text", { text: "\u751f\u6210\u4e00\u4e2a\u81ea\u7136\u7ad9\u7acb\u547c\u5438" }, (state) => (
     state.motion_brain_last_action === "breath"
     && state.motion_brain_final_passed === true

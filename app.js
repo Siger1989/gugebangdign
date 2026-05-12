@@ -1898,10 +1898,11 @@ const COMMAND_EXECUTORS = {
   }) => {
     requireIkControls();
     const mode = ["translate", "rotate", "scale"].includes(transform_mode) ? transform_mode : "translate";
+    const requestedTransforms = mode === "rotate" ? filterRotateTransformItems(transforms) : transforms;
     const appliedIds = [];
     const preserveControlIds = new Set();
     const desiredPositions = new Map();
-    transforms.forEach((item) => {
+    requestedTransforms.forEach((item) => {
       const control = MotionState.ik_controls.find((candidate) => candidate.id === item?.control_id);
       if (!control) {
         return;
@@ -10750,7 +10751,7 @@ function getSelectedTransformControls(mode = MotionState.transform.tool || "tran
 }
 
 function filterNestedRotateControls(controls) {
-  const candidates = controls.filter(Boolean);
+  const candidates = filterHybridRotateConflicts(controls.filter(Boolean));
   const fkParents = candidates.filter((control) => control.is_joint_control && control.target_joint);
   if (fkParents.length === 0) {
     return candidates;
@@ -10764,6 +10765,100 @@ function filterNestedRotateControls(controls) {
       && isJointDescendantOf(control.target_joint, parent.target_joint)
     ));
   });
+}
+
+function filterRotateTransformItems(transforms) {
+  if (!Array.isArray(transforms) || transforms.length <= 1) {
+    return Array.isArray(transforms) ? transforms : [];
+  }
+  const controls = transforms
+    .map((item) => MotionState.ik_controls.find((control) => control.id === item?.control_id))
+    .filter(Boolean);
+  if (controls.length <= 1) {
+    return transforms;
+  }
+  const allowedIds = new Set(filterNestedRotateControls(controls).map((control) => control.id));
+  return transforms.filter((item) => allowedIds.has(item?.control_id));
+}
+
+function filterHybridRotateConflicts(controls) {
+  if (controls.length <= 1) {
+    return controls;
+  }
+  const groups = new Map();
+  const passthrough = [];
+  controls.forEach((control, index) => {
+    const key = getHybridRotateConflictKey(control);
+    if (!key) {
+      passthrough.push({ control, index });
+      return;
+    }
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key).push({ control, index });
+  });
+  const keepIds = new Set(passthrough.map((item) => item.control.id));
+  groups.forEach((items) => {
+    const selected = items.find((item) => item.control.id === MotionState.selected_control);
+    const selectedFamily = selected ? getHybridRotateControlFamily(selected.control) : null;
+    const preferredFamily = selectedFamily
+      || (items.some((item) => getHybridRotateControlFamily(item.control) === "ik") ? "ik" : "fk");
+    const familyItems = items.filter((item) => getHybridRotateControlFamily(item.control) === preferredFamily);
+    const chosenItems = familyItems.length > 0 ? familyItems : items;
+    const exactTargetWinners = new Map();
+    chosenItems.forEach((item) => {
+      const targetKey = item.control.target_joint || item.control.id;
+      const current = exactTargetWinners.get(targetKey);
+      if (!current || shouldPreferRotateControl(item.control, current.control)) {
+        exactTargetWinners.set(targetKey, item);
+      }
+    });
+    exactTargetWinners.forEach((item) => keepIds.add(item.control.id));
+  });
+  return controls.filter((control) => keepIds.has(control.id));
+}
+
+function getHybridRotateConflictKey(control) {
+  if (!control?.target_joint || (!control.is_joint_control && !["hand", "foot"].includes(control.type))) {
+    return null;
+  }
+  const joint = control.target_joint;
+  if (/^R_(UpperArm|Forearm|Hand)$/.test(joint)) {
+    return "R_arm";
+  }
+  if (/^L_(UpperArm|Forearm|Hand)$/.test(joint)) {
+    return "L_arm";
+  }
+  if (/^R_(UpperLeg|LowerLeg|Foot|Toe)$/.test(joint)) {
+    return "R_leg";
+  }
+  if (/^L_(UpperLeg|LowerLeg|Foot|Toe)$/.test(joint)) {
+    return "L_leg";
+  }
+  return null;
+}
+
+function getHybridRotateControlFamily(control) {
+  if (["hand", "foot"].includes(control?.type)) {
+    return "ik";
+  }
+  return control?.is_joint_control ? "fk" : "other";
+}
+
+function shouldPreferRotateControl(candidate, current) {
+  if (candidate.id === MotionState.selected_control) {
+    return true;
+  }
+  if (current.id === MotionState.selected_control) {
+    return false;
+  }
+  const candidateIsIk = ["hand", "foot"].includes(candidate.type);
+  const currentIsIk = ["hand", "foot"].includes(current.type);
+  if (candidateIsIk !== currentIsIk) {
+    return candidateIsIk;
+  }
+  return false;
 }
 
 function isJointDescendantOf(jointName, ancestorJointName) {
